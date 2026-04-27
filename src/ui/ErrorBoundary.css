@@ -1,0 +1,41 @@
+.error-fallback {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 1.5rem;
+  background: #000;
+  color: #e8e8ec;
+  text-align: center;
+}
+
+.error-fallback__text {
+  margin: 0;
+  max-width: 40ch;
+  line-height: 1.4;
+  font-size: 0.95rem;
+  color: #a8a0c4;
+}
+
+.error-fallback__btn {
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 500;
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 6px;
+  background: #7c5cff;
+  color: #fff;
+  cursor: pointer;
+}
+
+.error-fallback__btn:hover {
+  filter: brightness(1.08);
+}
+
+.error-fallback__btn:focus-visible {
+  outline: 2px solid #7c5cff;
+  outline-offset: 2px;
+}

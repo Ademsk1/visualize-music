@@ -1,0 +1,46 @@
+:root {
+  color-scheme: dark;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* svh = visible viewport with mobile toolbars; dvh can be taller and shoves content "below" the fold */
+html {
+  height: 100vh;
+  height: 100svh;
+  max-height: 100vh;
+  max-height: 100svh;
+  overflow: hidden;
+}
+
+body {
+  margin: 0;
+  height: 100%;
+  max-height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  font-family:
+    system-ui,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  background: #000;
+  color: #e8e8ec;
+}
+
+/* One viewport, no page scroll. */
+#root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+}

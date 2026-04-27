@@ -1,0 +1,61 @@
+# Serves the Vite `dist/` folder via GitHub Pages.
+# In the repo: Settings → Pages → Build: GitHub Actions.
+# To disable automatic deploys, remove this file or set the workflow to manual-only.
+
+name: Pages
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Compute Vite base path
+        id: path
+        run: |
+          REPO="${{ github.event.repository.name }}"
+          OWNER="${{ github.repository_owner }}"
+          if [ "$REPO" = "${OWNER}.github.io" ]; then
+            echo "User or org site repo → site root (BASE_PATH=/)"
+            echo "base=/" >> "$GITHUB_OUTPUT"
+          else
+            echo "Project pages → /$REPO/"
+            echo "base=/$REPO/" >> "$GITHUB_OUTPUT"
+          fi
+      - run: npm ci
+      - name: Build
+        env:
+          BASE_PATH: ${{ steps.path.outputs.base }}
+        run: npm run build
+      - name: Copy index to 404 for static hosting (optional SPA fallback)
+        run: cp dist/index.html dist/404.html
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

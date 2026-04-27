@@ -1,0 +1,17 @@
+{
+  "name": "visualize-music",
+  "short_name": "vmusic",
+  "description": "Real-time Web Audio and Three.js: live microphone, mood-led colour. All processing in the browser.",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#050508",
+  "theme_color": "#050508",
+  "icons": [
+    {
+      "src": "favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
