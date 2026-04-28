@@ -14,5 +14,19 @@ describe('angularPlacement', () => {
     expect(thetaForPitchClass(-10)).toBe(thetaForPitchClass(0))
     expect(thetaForPitchClass(99)).toBe(thetaForPitchClass(11))
   })
+
+  it('increments evenly per semitone', () => {
+    const step = (Math.PI * 2) / 12
+    expect(thetaForPitchClass(1, 'even')).toBeCloseTo(step, 10)
+    expect(thetaForPitchClass(2, 'even')).toBeCloseTo(step * 2, 10)
+    expect(thetaForPitchClass(11, 'even')).toBeCloseTo(step * 11, 10)
+  })
+
+  it('supports golden-ratio mode', () => {
+    expect(thetaForPitchClass(0, 'golden')).toBeCloseTo(0, 10)
+    // pc=1 should not equal the even step angle.
+    const step = (Math.PI * 2) / 12
+    expect(thetaForPitchClass(1, 'golden')).not.toBeCloseTo(step, 6)
+  })
 })
 

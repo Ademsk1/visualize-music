@@ -71,6 +71,8 @@ development_status:
   4-5-link-preview-metadata-title-summary-og-basics: backlog
   epic-4-retrospective: optional
 
+  bug-stable-c-node: review
+
   epic-5: backlog
   5-1-start-retry-control-session-state-ladder-idle-requesting-live-error: backlog
   5-2-microphone-permission-request-denied-unavailable-recovery: backlog

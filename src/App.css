@@ -185,6 +185,21 @@
   accent-color: #7c5cff;
 }
 
+.hud-select {
+  font: inherit;
+  font-size: 0.75rem;
+  background: rgba(255, 255, 255, 0.04);
+  color: #e8e8ec;
+  border: 1px solid #343244;
+  border-radius: 6px;
+  padding: 0.25rem 0.5rem;
+}
+
+.hud-select:focus-visible {
+  outline: 2px solid #7c5cff;
+  outline-offset: 2px;
+}
+
 .hud-level-value {
   font-size: 0.68rem;
   color: #b0adbf;

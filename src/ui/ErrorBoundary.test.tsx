@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { ErrorBoundary } from './ErrorBoundary'
 import { copy } from './copy'
 
-function Boom() {
+function Boom(): never {
   throw new Error('boom')
 }
 

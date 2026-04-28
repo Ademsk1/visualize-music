@@ -1,6 +1,6 @@
 import { accumulateChromaFromFloatSpectrum } from './chroma'
 import type { FeatureFrame } from '../types/featureFrame'
-import { estimateLogPitch01 } from './pitchAutocorr'
+import { estimateLogPitch01WithConfidence } from './pitchAutocorr'
 
 let timeBuf: Float32Array<ArrayBuffer> | null = null
 let freqBuf: Uint8Array<ArrayBuffer> | null = null
@@ -15,6 +15,8 @@ let reducedMotionPref = false
 
 /** Last monophonic pitch blend; cleared when quiet. */
 let lastPitch01: number | null = null
+let lastPitchConf = 0
+let lastPitchClass: number | null = null
 
 export function setFeatureReducedMotion(value: boolean) {
   reducedMotionPref = value
@@ -25,6 +27,26 @@ export function resetFeatureSmoothing() {
   smoothTonal = 0.5
   levelPeak = 0.0001
   lastPitch01 = null
+  lastPitchConf = 0
+  lastPitchClass = null
+}
+
+function clamp01(x: number): number {
+  if (!Number.isFinite(x)) return 0
+  return Math.min(1, Math.max(0, x))
+}
+
+function pitchClassFromPitch01(pitch01: number): number | null {
+  if (!Number.isFinite(pitch01)) return null
+  // Reconstruct frequency from the pitch01 mapping in pitchAutocorr.ts.
+  const P_MIN = 80
+  const P_MAX = 2000
+  const logSpan = Math.log2(P_MAX) - Math.log2(P_MIN)
+  const f = 2 ** (Math.log2(P_MIN) + pitch01 * logSpan)
+  if (!Number.isFinite(f) || f <= 0) return null
+  const midi = Math.round(69 + 12 * Math.log2(f / 440))
+  const pc = ((midi % 12) + 12) % 12
+  return pc
 }
 
 function buffersFor(a: AnalyserNode) {
@@ -40,7 +62,7 @@ function buffersFor(a: AnalyserNode) {
     const b = a.frequencyBinCount * Float32Array.BYTES_PER_ELEMENT
     floatFreq = new Float32Array(new ArrayBuffer(b))
   }
-  return { time: timeBuf, freq: freqBuf, floatFreq: floatFreq! }
+  return { time: timeBuf, freq: freqBuf, floatFreq: floatFreq }
 }
 
 /**
@@ -78,10 +100,15 @@ export function readFeatureFrame(
   const voiceGate = 0.01
   if (rms < voiceGate) {
     lastPitch01 = null
+    lastPitchConf = 0
+    lastPitchClass = null
   } else if ((t & 1) === 0) {
-    const p = estimateLogPitch01(time, analyser.context.sampleRate)
-    if (p !== null) {
-      lastPitch01 = p
+    const r = estimateLogPitch01WithConfidence(time, analyser.context.sampleRate)
+    if (r !== null) {
+      lastPitch01 = r.pitch01
+      // Normalize raw confidence into 0..1-ish for downstream.
+      lastPitchConf = clamp01(r.conf / 0.35)
+      lastPitchClass = pitchClassFromPitch01(r.pitch01)
     }
   }
 
@@ -104,7 +131,12 @@ export function readFeatureFrame(
     )
   }
 
-  return { frame: { level: smoothLevel, tonalHint: smoothTonal, t }, rms }
+  const frame: FeatureFrame = { level: smoothLevel, tonalHint: smoothTonal, t }
+  if (lastPitchClass !== null && lastPitchConf >= 0.35) {
+    frame.pitchClassHint = lastPitchClass
+    frame.pitchClassConf = lastPitchConf
+  }
+  return { frame, rms }
 }
 
 /** Idle stage motion when no mic / graph. */

@@ -3,7 +3,7 @@ import { readFeatureFrame, resetFeatureSmoothing, setFeatureReducedMotion } from
 
 vi.mock('./pitchAutocorr', () => {
   return {
-    estimateLogPitch01: vi.fn(() => 0.25),
+    estimateLogPitch01WithConfidence: vi.fn(() => ({ pitch01: 0.25, conf: 0.3 })),
   }
 })
 

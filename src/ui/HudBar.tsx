@@ -14,6 +14,10 @@ type Props = {
   readonly minLevelDb?: number
   readonly onMinLevelDb?: (value: number) => void
   readonly showLevelSlider?: boolean
+  readonly angularPlacementMode?: 'even' | 'golden'
+  readonly onAngularPlacementMode?: (mode: 'even' | 'golden') => void
+  readonly journeySpeed?: number
+  readonly onJourneySpeed?: (value: number) => void
 }
 
 function statusCue(
@@ -44,6 +48,10 @@ export function HudBar({
   minLevelDb = -42,
   onMinLevelDb,
   showLevelSlider = false,
+  angularPlacementMode = 'even',
+  onAngularPlacementMode,
+  journeySpeed = 0.55,
+  onJourneySpeed,
 }: Props) {
   if (engineStatus === 'error') {
     return (
@@ -109,6 +117,41 @@ export function HudBar({
             />
             <span className="hud-level-value" aria-hidden>
               {minLevelDb}
+            </span>
+          </label>
+        )}
+        {onAngularPlacementMode && (
+          <label className="hud-level">
+            <span className="hud-level-label">Radial mapping</span>
+            <select
+              className="hud-select"
+              value={angularPlacementMode}
+              onChange={(e) =>
+                onAngularPlacementMode(e.target.value as 'even' | 'golden')
+              }
+            >
+              <option value="even">Even (chromatic)</option>
+              <option value="golden">Golden ratio</option>
+            </select>
+          </label>
+        )}
+        {onJourneySpeed && (
+          <label className="hud-level">
+            <span className="hud-level-label">Travel speed</span>
+            <input
+              type="range"
+              className="hud-level-range"
+              min={0.05}
+              max={2}
+              step={0.01}
+              value={journeySpeed}
+              onChange={(e) => onJourneySpeed(Number(e.target.value))}
+              aria-valuemin={0.05}
+              aria-valuemax={2}
+              aria-valuenow={journeySpeed}
+            />
+            <span className="hud-level-value" aria-hidden>
+              {journeySpeed.toFixed(2)}
             </span>
           </label>
         )}

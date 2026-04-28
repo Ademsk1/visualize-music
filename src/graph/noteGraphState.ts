@@ -2,6 +2,7 @@ import { CHROMA_SIZE } from '../audio/chroma'
 import { rmsToDbfs } from '../audio/chroma'
 
 export const FOCUS_DEBOUNCE_S = 0.2
+export const NOTE_EVENT_DEBOUNCE_S = 0.2
 /** Exponential falloff: brightness halves every N focus-change (note) events. */
 export const BRIGHTNESS_HALF_LIFE_NOTES = 5
 const MIN_NODE_SEP = 0.96
@@ -72,6 +73,8 @@ export type GraphEdgeSnapshot = {
 
 export type GraphViewSnapshot = {
   readonly focusPitchClass: number | null
+  /** Optional onset-style note event (supports repeated strikes of same pitch-class). */
+  readonly noteEvent: { readonly pitchClass: number; readonly id: number } | null
   readonly centroid: Vec3
   readonly contentRadius: number
   readonly didRevisit: boolean
@@ -98,6 +101,15 @@ export class NoteGraphModel {
   private driftDir: Vec3 | null = null
   private driftStartS = 0
 
+  // Focus stabilization + onset events.
+  private pendingFocus: number | null = null
+  private pendingSinceS = 0
+  private lastOnsetAtS = 0
+  private lastNoteEventAtS = 0
+  private lastRms = 0
+  private noteEventId = 0
+  private driftSpeed: number | null = null
+
   reset(): void {
     this.focus = null
     this.lastChangeAt = 0
@@ -111,6 +123,13 @@ export class NoteGraphModel {
     this.edgeSerial = 0
     this.driftDir = null
     this.driftStartS = 0
+    this.pendingFocus = null
+    this.pendingSinceS = 0
+    this.lastOnsetAtS = 0
+    this.lastNoteEventAtS = 0
+    this.lastRms = 0
+    this.noteEventId = 0
+    this.driftSpeed = null
   }
 
   private ensureDrift(nowS: number): void {
@@ -131,11 +150,14 @@ export class NoteGraphModel {
     if (!this.driftDir) return { x: 0, y: 0, z: 0 }
     const dt = Math.max(0, nowS - this.driftStartS)
     const mult = reducedMotion ? DRIFT_REDUCED_MOTION_MULT : 1
-    const s = DRIFT_SPEED_UNITS_PER_S * mult * dt
+    const s = (this.driftSpeed ?? DRIFT_SPEED_UNITS_PER_S) * mult * dt
     return { x: this.driftDir.x * s, y: this.driftDir.y * s, z: this.driftDir.z * s }
   }
 
-  private pickFocus(chroma: Float32Array): number | null {
+  private pickFocus(
+    chroma: Float32Array,
+    hint: { readonly pc: number; readonly conf: number } | null
+  ): number | null {
     let m = 0
     for (const v of chroma) {
       if (v > m) m = v
@@ -153,7 +175,30 @@ export class NoteGraphModel {
       }
     }
     if (best < 0) return null
+    if (hint && hint.conf >= 0.5) {
+      const pc = Math.max(0, Math.min(11, hint.pc))
+      const eh = chroma[pc] ?? 0
+      // Prefer pitch-derived class if it's reasonably competitive with the chroma winner.
+      if (eh >= bestE * 0.75) return pc
+    }
     return best
+  }
+
+  private detectOnset(nowS: number, rms: number): boolean {
+    // Simple onset: rising RMS with a minimum interval to avoid noise machine-gun.
+    const minInterval = NOTE_EVENT_DEBOUNCE_S
+    if (nowS - this.lastOnsetAtS < minInterval) return false
+    const prev = this.lastRms || 0
+    this.lastRms = rms
+    const absGate = 0.012
+    if (rms < absGate) return false
+    if (prev <= 0) return true
+    return rms >= prev * 1.45
+  }
+
+  private canEmitNoteEvent(nowS: number, reducedMotion: boolean): boolean {
+    const minInterval = reducedMotion ? NOTE_EVENT_DEBOUNCE_S * 1.2 : NOTE_EVENT_DEBOUNCE_S
+    return nowS - this.lastNoteEventAtS >= minInterval
   }
 
   /**
@@ -166,24 +211,94 @@ export class NoteGraphModel {
     chroma: Float32Array,
     rms: number,
     minDbfs: number,
-    opts: { readonly reducedMotion?: boolean } = {}
+    opts: {
+      readonly reducedMotion?: boolean
+      readonly pitchClassHint?: number
+      readonly pitchClassConf?: number
+      readonly driftSpeedUnitsPerS?: number
+    } = {}
   ): GraphViewSnapshot {
     this._didRevisit = false
+    const reducedMotion = opts.reducedMotion ?? false
+    this.driftSpeed =
+      opts.driftSpeedUnitsPerS != null && Number.isFinite(opts.driftSpeedUnitsPerS)
+        ? Math.max(0, opts.driftSpeedUnitsPerS)
+        : null
     if (rmsToDbfs(rms) < minDbfs) {
-      return this.buildSnapshot(nowS, opts.reducedMotion ?? false)
+      this.lastRms = rms
+      return this.buildSnapshot(nowS, reducedMotion, null)
     }
-    const cand = this.pickFocus(chroma)
+    const hint =
+      opts.pitchClassHint != null && opts.pitchClassConf != null
+        ? { pc: opts.pitchClassHint, conf: opts.pitchClassConf }
+        : null
+    const cand = this.pickFocus(chroma, hint)
     if (cand === null) {
-      return this.buildSnapshot(nowS, opts.reducedMotion ?? false)
+      this.lastRms = rms
+      return this.buildSnapshot(nowS, reducedMotion, null)
     }
+
+    // Emit onset events even when focus doesn't change (for repeated strikes).
+    let noteEvent: { pitchClass: number; id: number } | null = null
     if (this.focus !== null && this.focus === cand) {
-      return this.buildSnapshot(nowS, opts.reducedMotion ?? false)
+      if (this.detectOnset(nowS, rms)) {
+        this.lastOnsetAtS = nowS
+        if (this.canEmitNoteEvent(nowS, reducedMotion)) {
+          this.lastNoteEventAtS = nowS
+          this.noteEventId++
+          noteEvent = { pitchClass: cand, id: this.noteEventId }
+        }
+      }
+      return this.buildSnapshot(nowS, reducedMotion, noteEvent)
     }
+
+    // Hysteresis: prefer keeping current focus unless the new candidate is clearly stronger.
+    if (this.focus !== null) {
+      const eCur = chroma[this.focus] ?? 0
+      const eCand = chroma[cand] ?? 0
+      const switchRatio = 1.25
+      if (eCur > 0 && eCand < eCur * switchRatio) {
+        // Require sustained advantage before switching.
+        if (this.pendingFocus !== cand) {
+          this.pendingFocus = cand
+          this.pendingSinceS = nowS
+        }
+        const hold = reducedMotion ? 0.18 : 0.12
+        if (nowS - this.pendingSinceS < hold) {
+          if (this.detectOnset(nowS, rms)) {
+            this.lastOnsetAtS = nowS
+            if (this.canEmitNoteEvent(nowS, reducedMotion)) {
+              this.lastNoteEventAtS = nowS
+              this.noteEventId++
+              noteEvent = { pitchClass: this.focus, id: this.noteEventId }
+            }
+          }
+          return this.buildSnapshot(nowS, reducedMotion, noteEvent)
+        }
+      }
+    }
+
     if (this.focus !== null && nowS - this.lastChangeAt < FOCUS_DEBOUNCE_S) {
-      return this.buildSnapshot(nowS, opts.reducedMotion ?? false)
+      // Still debounce focus changes; onset can still fire.
+      if (this.detectOnset(nowS, rms)) {
+        this.lastOnsetAtS = nowS
+        if (this.canEmitNoteEvent(nowS, reducedMotion)) {
+          this.lastNoteEventAtS = nowS
+          this.noteEventId++
+          noteEvent = { pitchClass: this.focus, id: this.noteEventId }
+        }
+      }
+      return this.buildSnapshot(nowS, reducedMotion, noteEvent)
     }
     this.applyFocusChange(cand, nowS)
-    return this.buildSnapshot(nowS, opts.reducedMotion ?? false)
+    this.pendingFocus = null
+    // Treat the focus change as a note event.
+    if (this.canEmitNoteEvent(nowS, reducedMotion)) {
+      this.lastNoteEventAtS = nowS
+      this.noteEventId++
+      noteEvent = { pitchClass: cand, id: this.noteEventId }
+    }
+    return this.buildSnapshot(nowS, reducedMotion, noteEvent)
   }
 
   private applyFocusChange(next: number, nowS: number): void {
@@ -230,10 +345,15 @@ export class NoteGraphModel {
     )
   }
 
-  private buildSnapshot(nowS: number, reducedMotion: boolean): GraphViewSnapshot {
+  private buildSnapshot(
+    nowS: number,
+    reducedMotion: boolean,
+    noteEvent: { readonly pitchClass: number; readonly id: number } | null
+  ): GraphViewSnapshot {
     if (!this.hasAssignedFirst) {
       return {
         focusPitchClass: null,
+        noteEvent,
         centroid: { x: 0, y: 0, z: 0 },
         contentRadius: 0.3,
         didRevisit: this._didRevisit,
@@ -282,6 +402,7 @@ export class NoteGraphModel {
     nodes.sort((a, b) => a.pitchClass - b.pitchClass)
     return {
       focusPitchClass: this.focus,
+      noteEvent,
       centroid: { x: centroid.x + off.x, y: centroid.y + off.y, z: centroid.z + off.z },
       contentRadius: maxD,
       didRevisit: this._didRevisit,

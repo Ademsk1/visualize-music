@@ -24,7 +24,7 @@ import {
 } from './journeyState'
 import { JOURNEY_CONFIG } from './journeyConfig'
 import { hueForTonalBucket, tonalBucketFromHint } from './tonalColor'
-import { thetaForPitchClass } from './angularPlacement'
+import { type AngularPlacementMode, thetaForPitchClass } from './angularPlacement'
 import { radiusFromLevel } from './loudnessRadius'
 import type { GraphViewSnapshot } from '../graph/noteGraphState'
 import type { FeatureFrame } from '../types/featureFrame'
@@ -103,7 +103,7 @@ export class SceneController {
   private readonly journeyEvents: Group
   private journeyProgress = 0
   private lastJourneyMs = 0
-  private lastFocusPc: number | null = null
+  private lastNoteEventId = 0
   private journeyWrite = 0
   private readonly journeyNodeMeshes: Mesh<SphereGeometry, MeshStandardMaterial>[] = []
 
@@ -113,7 +113,9 @@ export class SceneController {
   private readonly journeyBasisU = new Vector3()
   private readonly journeyBasisV = new Vector3()
   private journeyRadiusSmooth: number = JOURNEY_CONFIG.loudnessRadiusMin
+  private angularPlacementMode: AngularPlacementMode = 'even'
   private lastVizMode: 'idle' | 'journey' = 'idle'
+  private journeySpeedUnitsPerS: number = JOURNEY_SPEED_UNITS_PER_S
 
   constructor(
     container: HTMLElement,
@@ -358,9 +360,8 @@ export class SceneController {
       this.controls.update()
     }
 
-    const speed = this.reducedMotionMql.matches
-      ? JOURNEY_SPEED_UNITS_PER_S * 0.25
-      : JOURNEY_SPEED_UNITS_PER_S
+    const base = this.journeySpeedUnitsPerS
+    const speed = this.reducedMotionMql.matches ? base * 0.25 : base
     this.journeyProgress = advanceJourneyProgress(this.journeyProgress, speed, dt)
 
     // The wire + camera move forward together (static relative framing).
@@ -371,18 +372,19 @@ export class SceneController {
     this.journeyCamZ = this.journeyProgress
     this.camera.position.z += dz
 
-    // Spawn a node on each focus change (note event surrogate).
-    const pc = graph.focusPitchClass
-    if (pc !== null && pc !== this.lastFocusPc && pc >= 0) {
-      const targetR = radiusFromLevel(f.level)
-      const a = this.reducedMotionMql.matches
-        ? JOURNEY_CONFIG.loudnessReducedMotionLerp
-        : 1
-      this.journeyRadiusSmooth += (targetR - this.journeyRadiusSmooth) * a
-      this.spawnJourneyNode(pc, f.level, this.journeyRadiusSmooth)
+    // Spawn a node on note events (supports repeated strikes of the same pitch-class).
+    if (graph.noteEvent && graph.noteEvent.id !== this.lastNoteEventId) {
+      this.lastNoteEventId = graph.noteEvent.id
+      const pc = graph.noteEvent.pitchClass
+      if (pc >= 0) {
+        const targetR = radiusFromLevel(f.level)
+        const a = this.reducedMotionMql.matches
+          ? JOURNEY_CONFIG.loudnessReducedMotionLerp
+          : 1
+        this.journeyRadiusSmooth += (targetR - this.journeyRadiusSmooth) * a
+        this.spawnJourneyNode(pc, f.level, this.journeyRadiusSmooth)
+      }
     }
-    this.lastFocusPc = pc
-
     // Fade/cleanup nodes as they fall behind.
     this.updateJourneyNodeFades()
     this.updateJourneyControlsTarget()
@@ -393,9 +395,18 @@ export class SceneController {
     this.renderer.setClearColor(BACKGROUND_CLEAR, 1)
   }
 
+  setAngularPlacementMode(mode: AngularPlacementMode) {
+    this.angularPlacementMode = mode
+  }
+
+  setJourneySpeedUnitsPerS(speed: number) {
+    if (!Number.isFinite(speed)) return
+    this.journeySpeedUnitsPerS = Math.max(0, speed)
+  }
+
   private spawnJourneyNode(pitchClass: number, brightness: number, radius: number) {
     // Fixed radius around the wire axis, deterministic angle per pitch class.
-    const theta = thetaForPitchClass(pitchClass)
+    const theta = thetaForPitchClass(pitchClass, this.angularPlacementMode)
     // Spawn nodes in *world space* near the front of the wire segment.
     // This ensures the camera+wire can travel forward while nodes are left behind (visible motion).
     const s =

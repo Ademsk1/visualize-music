@@ -16,10 +16,13 @@ import {
   resetDocumentTitleToDefault,
   syncDocumentTitle,
 } from './ui/documentTitle'
+import type { AngularPlacementMode } from './scene/angularPlacement'
+import { JOURNEY_SPEED_UNITS_PER_S } from './scene/journeyState'
 import './App.css'
 
 /** dBFS; lower = more sensitive (picks up quieter sounds). */
 const DEFAULT_MIN_LEVEL_DB = -42
+const DEFAULT_TRAVEL_SPEED = JOURNEY_SPEED_UNITS_PER_S
 
 function App() {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -40,11 +43,19 @@ function App() {
   const [blockedMessage, setBlockedMessage] = useState<string | null>(null)
   const [audioSuspended, setAudioSuspended] = useState(false)
   const [minLevelDb, setMinLevelDb] = useState(DEFAULT_MIN_LEVEL_DB)
+  const [journeySpeed, setJourneySpeed] = useState(DEFAULT_TRAVEL_SPEED)
+  const [angularPlacementMode, setAngularPlacementMode] =
+    useState<AngularPlacementMode>('even')
   const minLevelDbRef = useRef(minLevelDb)
+  const journeySpeedRef = useRef(journeySpeed)
   const reducedMotionRef = useRef(false)
   useEffect(() => {
     minLevelDbRef.current = minLevelDb
   }, [minLevelDb])
+  useEffect(() => {
+    journeySpeedRef.current = journeySpeed
+    sceneRef.current?.setJourneySpeedUnitsPerS(journeySpeed)
+  }, [journeySpeed])
 
   useEffect(() => {
     syncDocumentTitle(engineStatus, session, audioSuspended)
@@ -55,6 +66,10 @@ function App() {
       resetDocumentTitleToDefault()
     }
   }, [])
+
+  useEffect(() => {
+    sceneRef.current?.setAngularPlacementMode(angularPlacementMode)
+  }, [angularPlacementMode])
 
   const tearDownGraph = useCallback(() => {
     stateUnsubRef.current?.()
@@ -155,7 +170,12 @@ function App() {
               chromaRef.current,
               rms,
               minLevelDbRef.current,
-              { reducedMotion: reducedMotionRef.current }
+              {
+                reducedMotion: reducedMotionRef.current,
+                pitchClassHint: frame.pitchClassHint,
+                pitchClassConf: frame.pitchClassConf,
+                driftSpeedUnitsPerS: 0,
+              }
             )
             s.applyViz(frame, snap, { live: true })
             s.render()
@@ -258,6 +278,10 @@ function App() {
         minLevelDb={minLevelDb}
         onMinLevelDb={setMinLevelDb}
         showLevelSlider={engineStatus === 'ready'}
+        angularPlacementMode={angularPlacementMode}
+        onAngularPlacementMode={setAngularPlacementMode}
+        journeySpeed={journeySpeed}
+        onJourneySpeed={setJourneySpeed}
       />
       <main
         id="main-stage"

@@ -10,6 +10,14 @@ export function estimateLogPitch01(
   time: Float32Array,
   sampleRate: number
 ): number | null {
+  const r = estimateLogPitch01WithConfidence(time, sampleRate)
+  return r ? r.pitch01 : null
+}
+
+export function estimateLogPitch01WithConfidence(
+  time: Float32Array,
+  sampleRate: number
+): { readonly pitch01: number; readonly conf: number } | null {
   const n = Math.min(512, time.length)
   if (n < 256) return null
 
@@ -47,5 +55,10 @@ export function estimateLogPitch01(
   const f = sampleRate / bestLag
   if (f < P_MIN || f > P_MAX) return null
 
-  return (Math.log2(f) - Math.log2(P_MIN)) / (Math.log2(P_MAX) - Math.log2(P_MIN))
+  return {
+    pitch01:
+      (Math.log2(f) - Math.log2(P_MIN)) /
+      (Math.log2(P_MAX) - Math.log2(P_MIN)),
+    conf,
+  }
 }
