@@ -15,6 +15,7 @@ import {
   Vector3,
   WebGLRenderer,
 } from 'three'
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import type { GraphViewSnapshot } from '../graph/noteGraphState'
 import type { FeatureFrame } from '../types/featureFrame'
 
@@ -41,9 +42,11 @@ const JOURNEY_WIRE_BEHIND = 6
 const JOURNEY_NODE_RADIUS = 1.35
 const JOURNEY_NODE_MAX = 220
 const JOURNEY_NODE_FADE_UNITS = 18
-const ZOOM_MIN = 0.6
-const ZOOM_MAX = 2.6
-const ZOOM_WHEEL_SENSITIVITY = 0.0012
+
+const ORBIT_MIN_DISTANCE = 0.4
+const ORBIT_MAX_DISTANCE = 18
+const ORBIT_ZOOM_SPEED = 1.15
+const ORBIT_ROTATE_SPEED = 0.8
 
 function hashHue(pc: number): number {
   if (pc < 0) return 0.08
@@ -59,6 +62,8 @@ export class SceneController {
   private readonly canvas: HTMLCanvasElement
   private readonly scene: Scene
   private readonly camera: PerspectiveCamera
+  private readonly controls: OrbitControls
+  private readonly onWheelPreventScroll: (e: WheelEvent) => void
   private readonly bgColor = new Color()
   private readonly ambient: AmbientLight
   private readonly form: Mesh<SphereGeometry, MeshStandardMaterial>
@@ -105,10 +110,9 @@ export class SceneController {
   private journeyWrite = 0
   private readonly journeyNodeMeshes: Mesh<SphereGeometry, MeshStandardMaterial>[] = []
 
-  // Zoom (scroll wheel / trackpad)
-  private zoomTarget = 1
-  private zoomSmooth = 1
-  private readonly onWheel: (e: WheelEvent) => void
+  private journeyCamZ = 0
+  private readonly journeyTargetWork = new Vector3()
+  private lastVizMode: 'idle' | 'journey' = 'idle'
 
   constructor(
     container: HTMLElement,
@@ -124,6 +128,15 @@ export class SceneController {
     this.renderer.setSize(container.clientWidth, container.clientHeight, false)
     this.renderer.setClearColor(BACKGROUND_CLEAR, 1)
     this.canvas = this.renderer.domElement
+    // Required for reliable pointer-drag controls (prevents browser gesture handling).
+    this.canvas.style.touchAction = 'none'
+    // Keep the page from scrolling when zooming the scene over the canvas.
+    this.onWheelPreventScroll = (e: WheelEvent) => {
+      e.preventDefault()
+    }
+    this.canvas.addEventListener('wheel', this.onWheelPreventScroll, {
+      passive: false,
+    })
     this.canvas.addEventListener(
       'webglcontextlost',
       (e) => {
@@ -134,19 +147,17 @@ export class SceneController {
     )
     container.appendChild(this.canvas)
 
-    this.onWheel = (e: WheelEvent) => {
-      // Only zoom the scene when scrolling over the canvas.
-      // Prevent page scroll for a "camera dolly" feel.
-      e.preventDefault()
-      const d = e.deltaY
-      const next = this.zoomTarget * (1 + d * ZOOM_WHEEL_SENSITIVITY)
-      this.zoomTarget = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, next))
-    }
-    this.canvas.addEventListener('wheel', this.onWheel, { passive: false })
-
     this.scene = new Scene()
     this.camera = new PerspectiveCamera(45, 1, 0.1, 200)
     this.camera.position.set(0, 0, 2.5)
+    this.controls = new OrbitControls(this.camera, this.canvas)
+    this.controls.enableDamping = true
+    this.controls.dampingFactor = 0.08
+    this.controls.enablePan = false
+    this.controls.rotateSpeed = ORBIT_ROTATE_SPEED
+    this.controls.zoomSpeed = ORBIT_ZOOM_SPEED
+    this.controls.minDistance = ORBIT_MIN_DISTANCE
+    this.controls.maxDistance = ORBIT_MAX_DISTANCE
 
     this.ambient = new AmbientLight(0x7c5cff, 0.4)
     this.scene.add(this.ambient)
@@ -243,6 +254,12 @@ export class SceneController {
         ? Math.min(0.05, (now - this.lastFrameMs) * 0.001)
         : 0.016
     this.lastFrameMs = now
+    if (this.lastVizMode !== 'idle') {
+      this.lastVizMode = 'idle'
+      // Reset orbit center on entry to idle.
+      this.controls.target.set(0, 0, 0)
+      this.controls.update()
+    }
     this.form.visible = true
     this.graphRoot.visible = false
     this.trailLine.visible = false
@@ -283,6 +300,8 @@ export class SceneController {
       0.6,
       0.09 + 0.38 * f.level
     )
+    this.applyControlsMotionTuning()
+    this.controls.update()
   }
 
   applyViz(
@@ -311,6 +330,14 @@ export class SceneController {
         ? Math.min(0.05, (now - this.lastJourneyMs) * 0.001)
         : 0.016
     this.lastJourneyMs = now
+    if (this.lastVizMode !== 'journey') {
+      this.lastVizMode = 'journey'
+      // Rebase the "moving frame" when entering journey to avoid sudden dz jumps.
+      this.journeyCamZ = this.journeyProgress
+      this.lastJourneyMs = 0
+      this.updateJourneyControlsTarget()
+      this.controls.update()
+    }
 
     const speed = this.reducedMotionMql.matches
       ? JOURNEY_SPEED_UNITS_PER_S * 0.25
@@ -319,6 +346,11 @@ export class SceneController {
 
     // The wire + camera move forward together (static relative framing).
     this.journeyRoot.position.set(0, 0, this.journeyProgress)
+
+    // Carry the orbit camera frame forward without overwriting user orbit.
+    const dz = this.journeyProgress - this.journeyCamZ
+    this.journeyCamZ = this.journeyProgress
+    this.camera.position.z += dz
 
     // Spawn a node on each focus change (note event surrogate).
     const pc = graph.focusPitchClass
@@ -329,7 +361,9 @@ export class SceneController {
 
     // Fade/cleanup nodes as they fall behind.
     this.updateJourneyNodeFades()
-    this.updateJourneyCamera()
+    this.updateJourneyControlsTarget()
+    this.applyControlsMotionTuning()
+    this.controls.update()
 
     // Background is static black (see story-static-black-background.md).
     this.renderer.setClearColor(BACKGROUND_CLEAR, 1)
@@ -393,16 +427,18 @@ export class SceneController {
     }
   }
 
-  private updateJourneyCamera() {
-    // Camera follows the *front* of the wire (the traveling endpoint).
-    const cam = this.camera
+  private updateJourneyControlsTarget() {
     const frontZ = this.journeyProgress + JOURNEY_WIRE_AHEAD
-    const a = this.reducedMotionMql.matches ? 0.12 : 0.18
-    this.zoomSmooth += (this.zoomTarget - this.zoomSmooth) * a
-    const back = 3.2 * this.zoomSmooth
-    // Important: keep a small off-axis offset so the wire isn't viewed perfectly head-on.
-    cam.position.set(1.1, 0.55, frontZ - back)
-    cam.lookAt(0, 0, frontZ + 5.2)
+    this.journeyTargetWork.set(0, 0, frontZ)
+    // Keep the camera orbit centered on the wire tip.
+    this.controls.target.copy(this.journeyTargetWork)
+  }
+
+  private applyControlsMotionTuning() {
+    // Reduced motion should feel less floaty.
+    this.controls.dampingFactor = this.reducedMotionMql.matches ? 0.04 : 0.08
+    this.controls.rotateSpeed = this.reducedMotionMql.matches ? 0.5 : ORBIT_ROTATE_SPEED
+    this.controls.zoomSpeed = this.reducedMotionMql.matches ? 0.85 : ORBIT_ZOOM_SPEED
   }
 
   private updateTrail(g: GraphViewSnapshot) {
@@ -576,9 +612,7 @@ export class SceneController {
     let dTarget = Math.max(2, r * 2.55 + 1.35) * (1 - 0.14 * this.revisitDolly)
     dTarget = Math.min(42, dTarget)
     this.distSmooth += (dTarget - this.distSmooth) * (a * 0.7)
-    const zoomA = this.reducedMotionMql.matches ? 0.08 : 0.14
-    this.zoomSmooth += (this.zoomTarget - this.zoomSmooth) * zoomA
-    const dist = this.distSmooth * this.zoomSmooth
+    const dist = this.distSmooth
     const cam = this.camera
     const dir = new Vector3(0.38, 0.22, 1.05).normalize()
     this.point.position.set(
@@ -622,7 +656,8 @@ export class SceneController {
     for (const m of this.journeyNodeMeshes) {
       if (m) m.material.dispose()
     }
-    this.canvas.removeEventListener('wheel', this.onWheel)
+    this.canvas.removeEventListener('wheel', this.onWheelPreventScroll)
+    this.controls.dispose()
     this.renderer.dispose()
     this.renderer.domElement.remove()
   }
