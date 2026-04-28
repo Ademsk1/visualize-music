@@ -1,5 +1,5 @@
 # generated: 2026-04-28
-# last_updated: 2026-04-28
+# last_updated: 2026-04-28T16:21:00Z
 # project: visualize-music
 # project_key: NOKEY
 # tracking_system: file-system
@@ -42,42 +42,49 @@ tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
 
 development_status:
-  epic-1: in-progress
+  epic-1: done
   1-1-journey-state-travel-axis-contract: done
   1-2-render-static-wire-through-time: done
-  1-3-spawn-nodes-around-wire-orthogonal-fixed-radius-random-angle: review
+  1-3-spawn-nodes-around-wire-orthogonal-fixed-radius-random-angle: done
   1-4-no-snap-back-on-note-change-trajectory-continuity: done
-  1-5-journey-tuning-parameters-radius-wire-visibility-clutter-control: review
+  1-5-journey-tuning-parameters-radius-wire-visibility-clutter-control: done
   epic-1-retrospective: optional
 
-  epic-2: backlog
-  2-1-stable-colour-mapping-per-tonal-frequency-bucket: review
-  2-2-consistent-angular-placement-rule-between-wire-and-note-nodes: review
-  2-3-exponential-loudness-db-node-radial-distance-with-safe-minimum: review
+  epic-2: done
+  2-1-stable-colour-mapping-per-tonal-frequency-bucket: done
+  2-2-consistent-angular-placement-rule-between-wire-and-note-nodes: done
+  2-3-exponential-loudness-db-node-radial-distance-with-safe-minimum: done
   epic-2-retrospective: optional
 
-  epic-3: backlog
-  3-1-keyboard-operable-primary-path-visible-focus: review
-  3-2-non-colour-only-state-and-error-signaling: review
-  3-3-screen-reader-friendly-dynamic-status-updates-aria-live: review
-  3-4-wcag-oriented-contrast-for-chrome-text-and-controls: review
+  epic-3: done
+  3-1-keyboard-operable-primary-path-visible-focus: done
+  3-2-non-colour-only-state-and-error-signaling: done
+  3-3-screen-reader-friendly-dynamic-status-updates-aria-live: done
+  3-4-wcag-oriented-contrast-for-chrome-text-and-controls: done
   epic-3-retrospective: optional
 
-  epic-4: backlog
-  4-1-coverage-reporting-and-70-target-enforcement: review
-  4-2-add-tests-to-reach-70-without-testing-webgl-via-react-renders: review
-  4-3-dockerize-dev-build: review
-  4-4-readme-quickstart-scope-non-goals-deploy-notes: review
-  4-5-link-preview-metadata-title-summary-og-basics: backlog
+  epic-4: done
+  4-1-coverage-reporting-and-70-target-enforcement: done
+  4-2-add-tests-to-reach-70-without-testing-webgl-via-react-renders: done
+  4-3-dockerize-dev-build: done
+  4-4-readme-quickstart-scope-non-goals-deploy-notes: done
+  4-5-link-preview-metadata-title-summary-og-basics: done
   epic-4-retrospective: optional
 
-  bug-stable-c-node: review
+  bug-stable-c-node: done
 
-  epic-5: backlog
-  5-1-start-retry-control-session-state-ladder-idle-requesting-live-error: backlog
-  5-2-microphone-permission-request-denied-unavailable-recovery: backlog
-  5-3-audiocontext-unlock-resume-suspended-state-recovery: backlog
-  5-4-mic-ingestion-lifecycle-start-stop-cleanup-local-first-constraint: backlog
-  5-5-featureframe-contract-level-tonal-feeding-scene-without-react-raf-renders: backlog
-  5-6-product-framing-copy-piano-melody-first-non-goals: backlog
+  epic-5: done
+  5-1-start-retry-control-session-state-ladder-idle-requesting-live-error: done
+  5-2-microphone-permission-request-denied-unavailable-recovery: done
+  5-3-audiocontext-unlock-resume-suspended-state-recovery: done
+  5-4-mic-ingestion-lifecycle-start-stop-cleanup-local-first-constraint: done
+  5-5-featureframe-contract-level-tonal-feeding-scene-without-react-raf-renders: done
+  5-6-product-framing-copy-piano-melody-first-non-goals: done
   epic-5-retrospective: optional
+
+  epic-6: done
+  6-1-hps-poly-detector-core-top-k-fundamentals: done
+  6-2-fundamentals-to-pitch-classes-confidence-smoothing: done
+  6-3-poly-featureframe-and-chord-note-events: done
+  6-4-scene-chord-onset-spawns-multiple-nodes: done
+  epic-6-retrospective: done

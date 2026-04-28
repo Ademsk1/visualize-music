@@ -375,14 +375,15 @@ export class SceneController {
     // Spawn a node on note events (supports repeated strikes of the same pitch-class).
     if (graph.noteEvent && graph.noteEvent.id !== this.lastNoteEventId) {
       this.lastNoteEventId = graph.noteEvent.id
-      const pc = graph.noteEvent.pitchClass
-      if (pc >= 0) {
-        const targetR = radiusFromLevel(f.level)
-        const a = this.reducedMotionMql.matches
-          ? JOURNEY_CONFIG.loudnessReducedMotionLerp
-          : 1
-        this.journeyRadiusSmooth += (targetR - this.journeyRadiusSmooth) * a
-        this.spawnJourneyNode(pc, f.level, this.journeyRadiusSmooth)
+      const targetR = radiusFromLevel(f.level)
+      const a = this.reducedMotionMql.matches
+        ? JOURNEY_CONFIG.loudnessReducedMotionLerp
+        : 1
+      this.journeyRadiusSmooth += (targetR - this.journeyRadiusSmooth) * a
+      for (const pc of graph.noteEvent.pitchClasses) {
+        if (pc >= 0) {
+          this.spawnJourneyNode(pc, f.level, this.journeyRadiusSmooth)
+        }
       }
     }
     // Fade/cleanup nodes as they fall behind.

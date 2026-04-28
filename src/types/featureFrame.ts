@@ -14,6 +14,10 @@ export type FeatureFrame = {
   pitchClassHint?: number
   /** 0..1 confidence for `pitchClassHint` (higher = more reliable). */
   pitchClassConf?: number
+  /**
+   * Polyphonic pitch-class candidates (0–11) from HPS + smoothing, when present.
+   */
+  polyPitchClasses?: ReadonlyArray<{ readonly pc: number; readonly conf: number }>
   /** Monotonic frame id for debugging */
   t: number
 }

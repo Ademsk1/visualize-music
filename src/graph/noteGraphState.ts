@@ -3,6 +3,13 @@ import { rmsToDbfs } from '../audio/chroma'
 
 export const FOCUS_DEBOUNCE_S = 0.2
 export const NOTE_EVENT_DEBOUNCE_S = 0.2
+/** Include poly pitch classes in a chord note event when conf is at least this. */
+export const POLY_EVENT_MIN_CONF = 0.22
+/**
+ * When monophonic pitch (autocorr) is this confident or above, emit a single
+ * pitch class for the note event so harmonics from HPS do not spawn extra nodes.
+ */
+export const MONO_PITCH_CONF_SPAWN = 0.48
 /** Exponential falloff: brightness halves every N focus-change (note) events. */
 export const BRIGHTNESS_HALF_LIFE_NOTES = 5
 const MIN_NODE_SEP = 0.96
@@ -73,8 +80,11 @@ export type GraphEdgeSnapshot = {
 
 export type GraphViewSnapshot = {
   readonly focusPitchClass: number | null
-  /** Optional onset-style note event (supports repeated strikes of same pitch-class). */
-  readonly noteEvent: { readonly pitchClass: number; readonly id: number } | null
+  /** Onset-style note event: one or more pitch classes (chords). */
+  readonly noteEvent: {
+    readonly pitchClasses: readonly number[]
+    readonly id: number
+  } | null
   readonly centroid: Vec3
   readonly contentRadius: number
   readonly didRevisit: boolean
@@ -156,13 +166,25 @@ export class NoteGraphModel {
 
   private pickFocus(
     chroma: Float32Array,
-    hint: { readonly pc: number; readonly conf: number } | null
+    hint: { readonly pc: number; readonly conf: number } | null,
+    poly: readonly { readonly pc: number; readonly conf: number }[] | null
   ): number | null {
     let m = 0
     for (const v of chroma) {
       if (v > m) m = v
     }
     if (m < 1e-9) return null
+
+    if (poly && poly.length > 0) {
+      const sorted = [...poly].sort((a, b) => b.conf - a.conf || a.pc - b.pc)
+      for (const p of sorted) {
+        const pc = Math.max(0, Math.min(11, p.pc))
+        const e = chroma[pc] ?? 0
+        if (e >= m * 0.18) return pc
+      }
+      return Math.max(0, Math.min(11, sorted[0]!.pc))
+    }
+
     const rel = 0.32
     let best = -1
     let bestE = 0
@@ -182,6 +204,28 @@ export class NoteGraphModel {
       if (eh >= bestE * 0.75) return pc
     }
     return best
+  }
+
+  private pitchClassesForEvent(
+    cand: number,
+    poly: readonly { readonly pc: number; readonly conf: number }[] | null,
+    opts: { readonly pitchClassHint?: number; readonly pitchClassConf?: number }
+  ): number[] {
+    if (
+      opts.pitchClassHint != null &&
+      opts.pitchClassConf != null &&
+      opts.pitchClassConf >= MONO_PITCH_CONF_SPAWN
+    ) {
+      const pc = Math.max(0, Math.min(11, Math.round(opts.pitchClassHint)))
+      return [pc]
+    }
+    if (poly && poly.length > 0) {
+      const xs = poly
+        .filter((p) => p.conf >= POLY_EVENT_MIN_CONF)
+        .map((p) => Math.max(0, Math.min(11, p.pc)))
+      if (xs.length > 0) return [...new Set(xs)].sort((a, b) => a - b)
+    }
+    return [cand]
   }
 
   private detectOnset(nowS: number, rms: number): boolean {
@@ -215,6 +259,10 @@ export class NoteGraphModel {
       readonly reducedMotion?: boolean
       readonly pitchClassHint?: number
       readonly pitchClassConf?: number
+      readonly polyPitchClasses?: ReadonlyArray<{
+        readonly pc: number
+        readonly conf: number
+      }>
       readonly driftSpeedUnitsPerS?: number
     } = {}
   ): GraphViewSnapshot {
@@ -232,21 +280,25 @@ export class NoteGraphModel {
       opts.pitchClassHint != null && opts.pitchClassConf != null
         ? { pc: opts.pitchClassHint, conf: opts.pitchClassConf }
         : null
-    const cand = this.pickFocus(chroma, hint)
+    const poly = opts.polyPitchClasses ?? null
+    const cand = this.pickFocus(chroma, hint, poly)
     if (cand === null) {
       this.lastRms = rms
       return this.buildSnapshot(nowS, reducedMotion, null)
     }
 
     // Emit onset events even when focus doesn't change (for repeated strikes).
-    let noteEvent: { pitchClass: number; id: number } | null = null
+    let noteEvent: { pitchClasses: number[]; id: number } | null = null
     if (this.focus !== null && this.focus === cand) {
       if (this.detectOnset(nowS, rms)) {
         this.lastOnsetAtS = nowS
         if (this.canEmitNoteEvent(nowS, reducedMotion)) {
           this.lastNoteEventAtS = nowS
           this.noteEventId++
-          noteEvent = { pitchClass: cand, id: this.noteEventId }
+          noteEvent = {
+            pitchClasses: this.pitchClassesForEvent(cand, poly, opts),
+            id: this.noteEventId,
+          }
         }
       }
       return this.buildSnapshot(nowS, reducedMotion, noteEvent)
@@ -270,7 +322,10 @@ export class NoteGraphModel {
             if (this.canEmitNoteEvent(nowS, reducedMotion)) {
               this.lastNoteEventAtS = nowS
               this.noteEventId++
-              noteEvent = { pitchClass: this.focus, id: this.noteEventId }
+              noteEvent = {
+                pitchClasses: this.pitchClassesForEvent(this.focus, poly, opts),
+                id: this.noteEventId,
+              }
             }
           }
           return this.buildSnapshot(nowS, reducedMotion, noteEvent)
@@ -285,7 +340,10 @@ export class NoteGraphModel {
         if (this.canEmitNoteEvent(nowS, reducedMotion)) {
           this.lastNoteEventAtS = nowS
           this.noteEventId++
-          noteEvent = { pitchClass: this.focus, id: this.noteEventId }
+          noteEvent = {
+            pitchClasses: this.pitchClassesForEvent(this.focus, poly, opts),
+            id: this.noteEventId,
+          }
         }
       }
       return this.buildSnapshot(nowS, reducedMotion, noteEvent)
@@ -296,7 +354,10 @@ export class NoteGraphModel {
     if (this.canEmitNoteEvent(nowS, reducedMotion)) {
       this.lastNoteEventAtS = nowS
       this.noteEventId++
-      noteEvent = { pitchClass: cand, id: this.noteEventId }
+      noteEvent = {
+        pitchClasses: this.pitchClassesForEvent(cand, poly, opts),
+        id: this.noteEventId,
+      }
     }
     return this.buildSnapshot(nowS, reducedMotion, noteEvent)
   }
@@ -348,7 +409,10 @@ export class NoteGraphModel {
   private buildSnapshot(
     nowS: number,
     reducedMotion: boolean,
-    noteEvent: { readonly pitchClass: number; readonly id: number } | null
+    noteEvent: {
+      readonly pitchClasses: readonly number[]
+      readonly id: number
+    } | null
   ): GraphViewSnapshot {
     if (!this.hasAssignedFirst) {
       return {

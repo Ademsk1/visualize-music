@@ -1,6 +1,15 @@
-import { accumulateChromaFromFloatSpectrum } from './chroma'
+import {
+  accumulateChromaFromFloatSpectrum,
+  floatFreqDbToLinear,
+} from './chroma'
 import type { FeatureFrame } from '../types/featureFrame'
 import { estimateLogPitch01WithConfidence } from './pitchAutocorr'
+import { dropLikelyHarmonicOvertones } from './harmonicPrune'
+import { hpsDetectFundamentals } from './hps'
+import {
+  PitchClassSmoother,
+  pitchClassCandidates,
+} from './pitchClassCandidates'
 
 let timeBuf: Float32Array<ArrayBuffer> | null = null
 let freqBuf: Uint8Array<ArrayBuffer> | null = null
@@ -18,6 +27,25 @@ let lastPitch01: number | null = null
 let lastPitchConf = 0
 let lastPitchClass: number | null = null
 
+let polySmoother = new PitchClassSmoother({
+  alphaUp: 0.5,
+  alphaDown: 0.22,
+  minConf: 0.3,
+  topK: 4,
+})
+let linFreqScratch: Float32Array<ArrayBuffer> | null = null
+
+/** Equal-temperament A4 in Hz for pitch-class labels (monophonic + poly). */
+let referenceA4Hz = 440
+
+export function setFeatureTuningA4Hz(hz: number) {
+  if (!Number.isFinite(hz) || hz <= 0) {
+    referenceA4Hz = 440
+    return
+  }
+  referenceA4Hz = Math.min(480, Math.max(400, hz))
+}
+
 export function setFeatureReducedMotion(value: boolean) {
   reducedMotionPref = value
 }
@@ -29,11 +57,29 @@ export function resetFeatureSmoothing() {
   lastPitch01 = null
   lastPitchConf = 0
   lastPitchClass = null
+  polySmoother = new PitchClassSmoother({
+    alphaUp: 0.5,
+    alphaDown: 0.22,
+    minConf: 0.3,
+    topK: 4,
+  })
 }
 
 function clamp01(x: number): number {
   if (!Number.isFinite(x)) return 0
   return Math.min(1, Math.max(0, x))
+}
+
+/** In-place; helps HPS peak floor work across different input gains. */
+function normalizeLinearSpectrumMax(a: Float32Array): void {
+  let m = 0
+  for (let i = 0; i < a.length; i++) {
+    const v = a[i] ?? 0
+    if (v > m) m = v
+  }
+  if (m <= 1e-15) return
+  const inv = 1 / m
+  for (let i = 0; i < a.length; i++) a[i] = (a[i] ?? 0) * inv
 }
 
 function pitchClassFromPitch01(pitch01: number): number | null {
@@ -44,7 +90,8 @@ function pitchClassFromPitch01(pitch01: number): number | null {
   const logSpan = Math.log2(P_MAX) - Math.log2(P_MIN)
   const f = 2 ** (Math.log2(P_MIN) + pitch01 * logSpan)
   if (!Number.isFinite(f) || f <= 0) return null
-  const midi = Math.round(69 + 12 * Math.log2(f / 440))
+  const ref = referenceA4Hz > 0 && Number.isFinite(referenceA4Hz) ? referenceA4Hz : 440
+  const midi = Math.round(69 + 12 * Math.log2(f / ref))
   const pc = ((midi % 12) + 12) % 12
   return pc
 }
@@ -122,6 +169,8 @@ export function readFeatureFrame(
   smoothLevel = aL * rawLevel + (1 - aL) * smoothLevel
   smoothTonal = aT * rawTonal + (1 - aT) * smoothTonal
 
+  let polyPitch: Array<{ readonly pc: number; readonly conf: number }> | undefined
+
   if (chromaOut) {
     analyser.getFloatFrequencyData(ff)
     accumulateChromaFromFloatSpectrum(
@@ -129,6 +178,41 @@ export function readFeatureFrame(
       analyser.context.sampleRate,
       chromaOut
     )
+
+    if (rms < voiceGate) {
+      polySmoother.update([])
+    } else {
+      const n = ff.length
+      if (linFreqScratch?.length !== n) {
+        const bytes = n * Float32Array.BYTES_PER_ELEMENT
+        linFreqScratch = new Float32Array(new ArrayBuffer(bytes))
+      }
+      const lin = linFreqScratch
+      for (let i = 0; i < n; i++) {
+        lin[i] = floatFreqDbToLinear(ff[i] ?? 0)
+      }
+      normalizeLinearSpectrumMax(lin)
+      const sr = analyser.context.sampleRate
+      const fftSize = analyser.fftSize
+      const raw = hpsDetectFundamentals(lin, sr, fftSize, {
+        topK: 4,
+        harmonicCount: 6,
+        minHz: 70,
+        maxHz: 1600,
+        // Spectrum is max-normalized to ~1; floor rejects noise-only bins.
+        peakFloor: 0.04,
+        // Stronger suppression so a single note does not leave multiple fundamentals.
+        suppression: 0.07,
+      })
+      const pruned = dropLikelyHarmonicOvertones(raw)
+      const cands = pitchClassCandidates(
+        pruned.map((x) => ({ f0Hz: x.f0Hz, score: x.score })),
+        0,
+        referenceA4Hz
+      )
+      const poly = polySmoother.update(cands)
+      if (poly.length > 0) polyPitch = poly
+    }
   }
 
   const frame: FeatureFrame = { level: smoothLevel, tonalHint: smoothTonal, t }
@@ -136,6 +220,7 @@ export function readFeatureFrame(
     frame.pitchClassHint = lastPitchClass
     frame.pitchClassConf = lastPitchConf
   }
+  if (polyPitch) frame.polyPitchClasses = polyPitch
   return { frame, rms }
 }
 

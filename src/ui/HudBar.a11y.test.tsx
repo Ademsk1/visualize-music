@@ -68,5 +68,20 @@ describe('HudBar accessibility', () => {
     const icon = within(hud).getByText('●')
     expect(icon.getAttribute('aria-hidden')).toBe('true')
   })
+
+  it('exposes a labeled keyboard shortcut group', () => {
+    render(
+      <HudBar
+        session={SessionStates.idle}
+        engineStatus="ready"
+        onControl={() => {}}
+      />
+    )
+
+    expect(
+      screen.getByRole('group', { name: 'Keyboard shortcuts' })
+    ).toBeTruthy()
+    expect(screen.getByText('Space', { selector: 'kbd' })).toBeTruthy()
+  })
 })
 

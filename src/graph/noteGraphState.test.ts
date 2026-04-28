@@ -48,4 +48,22 @@ describe('NoteGraphModel', () => {
   it('honours BRIGHTNESS_HALF_LIFE_NOTES as decay constant (smoke)', () => {
     expect(BRIGHTNESS_HALF_LIFE_NOTES).toBe(5)
   })
+
+  it('emits a chord noteEvent with multiple pitch classes on first focus', () => {
+    const m = new NoteGraphModel()
+    const c = new Float32Array(CHROMA_SIZE)
+    c[0] = 1
+    c[4] = 1
+    for (let i = 0; i < CHROMA_SIZE; i++) {
+      if (i !== 0 && i !== 4) c[i] = 0.01
+    }
+    const g = m.update(0.3, c, 0.05, -60, {
+      polyPitchClasses: [
+        { pc: 0, conf: 0.9 },
+        { pc: 4, conf: 0.85 },
+      ],
+    })
+    expect(g.noteEvent).not.toBeNull()
+    expect(g.noteEvent!.pitchClasses).toEqual([0, 4])
+  })
 })

@@ -4,9 +4,11 @@ export const copy = {
   stopListening: 'Stop',
   resumeAudio: 'Resume',
   statusIdle: 'Ready',
+  statusRequestingAccess: 'Requesting access…',
+  statusBlocked: 'Blocked',
   /** Light piano-first framing; keeps scope honest per product brief. */
   taglineIdle:
-    'Piano-leaning, mood-first. Audio stays in your browser. Space: start or stop when the stage is ready.',
+    'Piano-leaning, mood-first. Audio stays in your browser — not a tuner, notation app, or judge of your playing.',
   statusAudioPaused: 'Audio paused (tap Resume)',
   statusLive: 'Live',
   statusLoading: 'Loading visuals…',
@@ -22,6 +24,21 @@ export const copy = {
   errorRender:
     'Something went wrong in the interface. Refresh the page to try again.',
   skipToViz: 'Skip to visualization',
+  /** HUD: live pitch-class readout (throttled; not tuner-grade). */
+  hudDetectedNotes: 'Heard (pitch classes)',
+  /** HUD: envelope level meter */
+  hudInputLevel: 'Input level',
+  /** Map detected pitch classes to A4; not strobe tuning. */
+  hudTuningA4: 'A4 reference (Hz)',
+  /** Shown when engine is ready; groups tuning + other sliders. */
+  hudTuningHint:
+    'Maps pitch labels to this A4. Does not retune the microphone—only the note names.',
+  /** Region label for the shortcut strip */
+  hudKeyboardRegionLabel: 'Keyboard shortcuts',
+  /** Segments for the visual shortcut strip (paired with kbd in HudBar) */
+  hudKbdSpaceAction: 'Start or stop',
+  hudKbdTabAction: 'Move focus (skip, controls, stage)',
+  hudKbdStageAction: 'Click the stage to focus the 3D view',
 } as const
 
 export function micErrorMessage(e: unknown): string {

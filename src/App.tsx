@@ -4,6 +4,7 @@ import {
   readFeatureFrame,
   resetFeatureSmoothing,
   setFeatureReducedMotion,
+  setFeatureTuningA4Hz,
   stubFeatureFrame,
 } from './audio/features'
 import { createAudioGraph, type AudioGraph } from './audio/createAudioGraph'
@@ -12,6 +13,8 @@ import { NoteGraphModel } from './graph/noteGraphState'
 import { CHROMA_SIZE } from './audio/chroma'
 import { HudBar, type EngineStatus } from './ui/HudBar'
 import { copy, micErrorMessage } from './ui/copy'
+import { formatNoteReadout } from './ui/pitchClassNames'
+import type { FeatureFrame } from './types/featureFrame'
 import {
   resetDocumentTitleToDefault,
   syncDocumentTitle,
@@ -23,6 +26,7 @@ import './App.css'
 /** dBFS; lower = more sensitive (picks up quieter sounds). */
 const DEFAULT_MIN_LEVEL_DB = -42
 const DEFAULT_TRAVEL_SPEED = JOURNEY_SPEED_UNITS_PER_S
+const DEFAULT_TUNING_A4_HZ = 440
 
 function App() {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -46,6 +50,12 @@ function App() {
   const [journeySpeed, setJourneySpeed] = useState(DEFAULT_TRAVEL_SPEED)
   const [angularPlacementMode, setAngularPlacementMode] =
     useState<AngularPlacementMode>('even')
+  const [tuningA4Hz, setTuningA4Hz] = useState(DEFAULT_TUNING_A4_HZ)
+  const [liveAudioReadout, setLiveAudioReadout] = useState<{
+    level: number
+    notesLine: string
+  } | null>(null)
+  const lastFrameRef = useRef<FeatureFrame | null>(null)
   const minLevelDbRef = useRef(minLevelDb)
   const journeySpeedRef = useRef(journeySpeed)
   const reducedMotionRef = useRef(false)
@@ -56,6 +66,36 @@ function App() {
     journeySpeedRef.current = journeySpeed
     sceneRef.current?.setJourneySpeedUnitsPerS(journeySpeed)
   }, [journeySpeed])
+
+  useEffect(() => {
+    if (engineStatus !== 'ready' || session !== SessionStates.live) {
+      lastFrameRef.current = null
+      const clearId = globalThis.setTimeout(() => {
+        setLiveAudioReadout(null)
+      }, 0)
+      return () => {
+        globalThis.clearTimeout(clearId)
+      }
+    }
+    const tick = () => {
+      const f = lastFrameRef.current
+      if (!f) {
+        setLiveAudioReadout(null)
+        return
+      }
+      setLiveAudioReadout({
+        level: f.level,
+        notesLine: formatNoteReadout(f),
+      })
+    }
+    const firstId = globalThis.setTimeout(tick, 0)
+    const id = globalThis.setInterval(tick, 200)
+    return () => {
+      globalThis.clearTimeout(firstId)
+      globalThis.clearInterval(id)
+      lastFrameRef.current = null
+    }
+  }, [engineStatus, session])
 
   useEffect(() => {
     syncDocumentTitle(engineStatus, session, audioSuspended)
@@ -70,6 +110,10 @@ function App() {
   useEffect(() => {
     sceneRef.current?.setAngularPlacementMode(angularPlacementMode)
   }, [angularPlacementMode])
+
+  useEffect(() => {
+    setFeatureTuningA4Hz(tuningA4Hz)
+  }, [tuningA4Hz])
 
   const tearDownGraph = useCallback(() => {
     stateUnsubRef.current?.()
@@ -165,6 +209,7 @@ function App() {
               t,
               chromaRef.current
             )
+            lastFrameRef.current = frame
             const snap = noteGraphRef.current.update(
               performance.now() * 0.001,
               chromaRef.current,
@@ -174,6 +219,7 @@ function App() {
                 reducedMotion: reducedMotionRef.current,
                 pitchClassHint: frame.pitchClassHint,
                 pitchClassConf: frame.pitchClassConf,
+                polyPitchClasses: frame.polyPitchClasses,
                 driftSpeedUnitsPerS: 0,
               }
             )
@@ -252,7 +298,7 @@ function App() {
       const t = e.target
       if (
         t instanceof globalThis.HTMLElement &&
-        t.closest('input, textarea, [contenteditable="true"]')
+        t.closest('input, textarea, select, [contenteditable="true"]')
       ) {
         return
       }
@@ -282,6 +328,10 @@ function App() {
         onAngularPlacementMode={setAngularPlacementMode}
         journeySpeed={journeySpeed}
         onJourneySpeed={setJourneySpeed}
+        tuningA4Hz={tuningA4Hz}
+        onTuningA4Hz={setTuningA4Hz}
+        showTuningSlider={engineStatus === 'ready'}
+        liveAudioReadout={liveAudioReadout}
       />
       <main
         id="main-stage"
