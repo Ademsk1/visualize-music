@@ -1,0 +1,81 @@
+# generated: 2026-04-28
+# last_updated: 2026-04-28
+# project: visualize-music
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: _bmad-output/implementation-artifacts
+#
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: Automatically when first story is created (via create-story)
+#   - in-progress → done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - Developer typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+
+generated: 2026-04-28
+last_updated: 2026-04-28
+project: visualize-music
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+
+development_status:
+  epic-1: in-progress
+  1-1-journey-state-travel-axis-contract: done
+  1-2-render-static-wire-through-time: done
+  1-3-spawn-nodes-around-wire-orthogonal-fixed-radius-random-angle: review
+  1-4-no-snap-back-on-note-change-trajectory-continuity: done
+  1-5-journey-tuning-parameters-radius-wire-visibility-clutter-control: review
+  epic-1-retrospective: optional
+
+  epic-2: backlog
+  2-1-stable-colour-mapping-per-tonal-frequency-bucket: review
+  2-2-consistent-angular-placement-rule-between-wire-and-note-nodes: review
+  2-3-exponential-loudness-db-node-radial-distance-with-safe-minimum: review
+  epic-2-retrospective: optional
+
+  epic-3: backlog
+  3-1-keyboard-operable-primary-path-visible-focus: review
+  3-2-non-colour-only-state-and-error-signaling: review
+  3-3-screen-reader-friendly-dynamic-status-updates-aria-live: review
+  3-4-wcag-oriented-contrast-for-chrome-text-and-controls: review
+  epic-3-retrospective: optional
+
+  epic-4: backlog
+  4-1-coverage-reporting-and-70-target-enforcement: review
+  4-2-add-tests-to-reach-70-without-testing-webgl-via-react-renders: review
+  4-3-dockerize-dev-build: review
+  4-4-readme-quickstart-scope-non-goals-deploy-notes: review
+  4-5-link-preview-metadata-title-summary-og-basics: backlog
+  epic-4-retrospective: optional
+
+  epic-5: backlog
+  5-1-start-retry-control-session-state-ladder-idle-requesting-live-error: backlog
+  5-2-microphone-permission-request-denied-unavailable-recovery: backlog
+  5-3-audiocontext-unlock-resume-suspended-state-recovery: backlog
+  5-4-mic-ingestion-lifecycle-start-stop-cleanup-local-first-constraint: backlog
+  5-5-featureframe-contract-level-tonal-feeding-scene-without-react-raf-renders: backlog
+  5-6-product-framing-copy-piano-melody-first-non-goals: backlog
+  epic-5-retrospective: optional

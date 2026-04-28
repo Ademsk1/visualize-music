@@ -248,13 +248,6 @@ function App() {
       <a className="skip-link" href="#main-stage">
         {copy.skipToViz}
       </a>
-      <main
-        id="main-stage"
-        className="stage-host"
-        ref={hostRef}
-        aria-label="3D music visualization, animated from microphone level and tone"
-        tabIndex={0}
-      />
       <HudBar
         session={session}
         engineStatus={engineStatus}
@@ -265,6 +258,13 @@ function App() {
         minLevelDb={minLevelDb}
         onMinLevelDb={setMinLevelDb}
         showLevelSlider={engineStatus === 'ready'}
+      />
+      <main
+        id="main-stage"
+        className="stage-host"
+        ref={hostRef}
+        aria-label="3D music visualization, animated from microphone level and tone"
+        tabIndex={0}
       />
     </div>
   )

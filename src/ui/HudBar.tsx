@@ -16,18 +16,22 @@ type Props = {
   readonly showLevelSlider?: boolean
 }
 
-function lineStatus(
+function statusCue(
   engine: EngineStatus,
   s: SessionState,
   livePaused: boolean
-): string {
-  if (engine === 'loading') return copy.statusLoading
+): { readonly icon: string; readonly text: string } {
+  if (engine === 'loading') return { icon: '…', text: copy.statusLoading }
   if (s === SessionStates.live) {
-    return livePaused ? copy.statusAudioPaused : copy.statusLive
+    return livePaused
+      ? { icon: '⏸', text: copy.statusAudioPaused }
+      : { icon: '●', text: copy.statusLive }
   }
-  if (s === SessionStates.blocked) return 'Blocked'
-  if (s === SessionStates.requestingPermission) return 'Requesting access…'
-  return copy.statusIdle
+  if (s === SessionStates.blocked) return { icon: '⛔', text: 'Blocked' }
+  if (s === SessionStates.requestingPermission) {
+    return { icon: '🔒', text: 'Requesting access…' }
+  }
+  return { icon: '○', text: copy.statusIdle }
 }
 
 export function HudBar({
@@ -67,12 +71,23 @@ export function HudBar({
   else if (liveRunning) cta = copy.stopListening
   else cta = copy.startListening
   const ctaClass = liveRunning ? 'hud-cta hud-cta--stop' : 'hud-cta'
+  const cue = statusCue(engineStatus, session, livePaused)
+  const announcement =
+    session === SessionStates.blocked && blockedMessage
+      ? `Blocked. ${blockedMessage}`
+      : cue.text
 
   return (
     <section className="hud" aria-label="Player controls">
       <div className="hud-left">
-        <span className="hud-status" aria-live="polite">
-          {lineStatus(engineStatus, session, livePaused)}
+        <span className="hud-status" aria-live="polite" aria-atomic="true">
+          <span className="hud-status-icon" aria-hidden>
+            {cue.icon}
+          </span>{' '}
+          {cue.text}
+        </span>
+        <span className="sr-only" aria-live="polite" aria-atomic="true">
+          {announcement}
         </span>
         {engineStatus === 'ready' && session === SessionStates.idle && (
           <p className="hud-tagline">{copy.taglineIdle}</p>

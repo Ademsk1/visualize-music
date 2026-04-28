@@ -16,6 +16,16 @@ import {
   WebGLRenderer,
 } from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import {
+  advanceJourneyProgress,
+  computeJourneyDtSeconds,
+  JOURNEY_AXIS,
+  JOURNEY_SPEED_UNITS_PER_S,
+} from './journeyState'
+import { JOURNEY_CONFIG } from './journeyConfig'
+import { hueForTonalBucket, tonalBucketFromHint } from './tonalColor'
+import { thetaForPitchClass } from './angularPlacement'
+import { radiusFromLevel } from './loudnessRadius'
 import type { GraphViewSnapshot } from '../graph/noteGraphState'
 import type { FeatureFrame } from '../types/featureFrame'
 
@@ -27,21 +37,18 @@ const NODE_SCALE_BASE = 0.34
 const SPHERE_W = 48
 const SPHERE_H = 32
 const TRAIL_MAX_POINTS = 5000
-const TRAIL_MIN_STEP = 0.02
 const BREADCRUMB_MAX = 140
-const BREADCRUMB_EVERY_POINTS = 18
 
 const BACKGROUND_CLEAR = 0x000000
 
 // --- Journey (forward travel) ---
-const JOURNEY_SPEED_UNITS_PER_S = 0.55
 // Spawn nodes near the *front* of the wire segment (camera is near the front).
-const JOURNEY_SPAWN_FROM_WIRE_FRONT = 1.4
-const JOURNEY_WIRE_AHEAD = 28
-const JOURNEY_WIRE_BEHIND = 6
-const JOURNEY_NODE_RADIUS = 1.35
-const JOURNEY_NODE_MAX = 220
-const JOURNEY_NODE_FADE_UNITS = 18
+const JOURNEY_SPAWN_FROM_WIRE_FRONT: number = JOURNEY_CONFIG.spawnFromWireFront
+const JOURNEY_WIRE_AHEAD: number = JOURNEY_CONFIG.wireAhead
+const JOURNEY_WIRE_BEHIND: number = JOURNEY_CONFIG.wireBehind
+const JOURNEY_NODE_RADIUS: number = JOURNEY_CONFIG.nodeRadius
+const JOURNEY_NODE_MAX: number = JOURNEY_CONFIG.nodeMax
+const JOURNEY_NODE_FADE_UNITS: number = JOURNEY_CONFIG.nodeFadeUnits
 
 const ORBIT_MIN_DISTANCE = 0.4
 const ORBIT_MAX_DISTANCE = 18
@@ -64,7 +71,6 @@ export class SceneController {
   private readonly camera: PerspectiveCamera
   private readonly controls: OrbitControls
   private readonly onWheelPreventScroll: (e: WheelEvent) => void
-  private readonly bgColor = new Color()
   private readonly ambient: AmbientLight
   private readonly form: Mesh<SphereGeometry, MeshStandardMaterial>
   private readonly point: PointLight
@@ -76,20 +82,11 @@ export class SceneController {
   private readonly trailGeo: BufferGeometry
   private readonly trailMat: LineBasicMaterial
   private readonly trailPositions: Float32Array
-  private trailCount = 0
-  private readonly trailLast = new Vector3(0, 0, 0)
   private readonly breadcrumbGroup: Group
   private readonly breadcrumbGeom: SphereGeometry
   private readonly breadcrumbMeshes: Mesh<SphereGeometry, MeshStandardMaterial>[] = []
-  private breadcrumbWrite = 0
   private lastFrameMs = 0
   private readonly reducedMotionMql: MediaQueryList
-  private lookWork = new Vector3()
-  private lookSmooth = new Vector3(0, 0, 2.5)
-  private distSmooth = 2.8
-  private revisitDolly = 0
-  private offAxis = new Vector3()
-  private tPhase = 0
   private readonly tmpVec = new Vector3()
   private readonly formGeom = new SphereGeometry(0.5, SPHERE_W, SPHERE_H)
   private readonly nodeGeom = new SphereGeometry(NODE_SCALE_BASE, SPHERE_W, SPHERE_H)
@@ -112,6 +109,10 @@ export class SceneController {
 
   private journeyCamZ = 0
   private readonly journeyTargetWork = new Vector3()
+  private readonly journeyAxis = new Vector3(JOURNEY_AXIS.x, JOURNEY_AXIS.y, JOURNEY_AXIS.z)
+  private readonly journeyBasisU = new Vector3()
+  private readonly journeyBasisV = new Vector3()
+  private journeyRadiusSmooth: number = JOURNEY_CONFIG.loudnessRadiusMin
   private lastVizMode: 'idle' | 'journey' = 'idle'
 
   constructor(
@@ -146,6 +147,21 @@ export class SceneController {
       false
     )
     container.appendChild(this.canvas)
+
+    // Journey axis is treated as a unit direction. Guard against accidental drift.
+    if (this.journeyAxis.lengthSq() === 0) {
+      this.journeyAxis.set(0, 0, 1)
+    } else {
+      this.journeyAxis.normalize()
+    }
+    // Stable orthonormal basis around the wire axis for radial spawning.
+    // Pick a helper axis that is not parallel, then build U/V via cross products.
+    this.tmpVec.set(0, 0, 1)
+    if (Math.abs(this.journeyAxis.dot(this.tmpVec)) > 0.9) {
+      this.tmpVec.set(0, 1, 0)
+    }
+    this.journeyBasisU.copy(this.tmpVec).cross(this.journeyAxis).normalize()
+    this.journeyBasisV.copy(this.journeyAxis).cross(this.journeyBasisU).normalize()
 
     this.scene = new Scene()
     this.camera = new PerspectiveCamera(45, 1, 0.1, 200)
@@ -215,18 +231,26 @@ export class SceneController {
     this.trailLine.visible = false
     this.scene.add(this.trailLine)
 
-    // Journey: a static wire aligned with +Z (time), and nodes spawned around it.
+    // Journey: a static wire aligned with the journey axis, and nodes spawned around it.
     this.journeyRoot = new Group()
     this.journeyRoot.visible = false
     this.journeyEvents = new Group()
     const wireGeo = new BufferGeometry().setFromPoints([
-      new Vector3(0, 0, -JOURNEY_WIRE_BEHIND),
-      new Vector3(0, 0, JOURNEY_WIRE_AHEAD),
+      new Vector3(
+        -this.journeyAxis.x * JOURNEY_WIRE_BEHIND,
+        -this.journeyAxis.y * JOURNEY_WIRE_BEHIND,
+        -this.journeyAxis.z * JOURNEY_WIRE_BEHIND
+      ),
+      new Vector3(
+        this.journeyAxis.x * JOURNEY_WIRE_AHEAD,
+        this.journeyAxis.y * JOURNEY_WIRE_AHEAD,
+        this.journeyAxis.z * JOURNEY_WIRE_AHEAD
+      ),
     ])
     const wireMat = new LineBasicMaterial({
       color: 0xffffff,
       transparent: true,
-      opacity: 0.65,
+      opacity: JOURNEY_CONFIG.wireOpacity,
     })
     this.journeyWire = new Line(wireGeo, wireMat)
     this.journeyRoot.add(this.journeyWire)
@@ -264,8 +288,6 @@ export class SceneController {
     this.graphRoot.visible = false
     this.trailLine.visible = false
     this.breadcrumbGroup.visible = false
-    this.trailCount = 0
-    this.breadcrumbWrite = 0
     for (const m of this.breadcrumbMeshes) {
       m.visible = false
       m.material.opacity = 0
@@ -285,8 +307,7 @@ export class SceneController {
       0.95 + 0.12 * Math.sin(ph * 0.38)
     )
 
-    const t = Math.min(1, Math.max(0, f.tonalHint))
-    const hue = t
+    const hue = hueForTonalBucket(tonalBucketFromHint(f.tonalHint))
     this.renderer.setClearColor(BACKGROUND_CLEAR, 1)
     this.ambient.color.setHSL(hue, 0.3, 0.52)
     this.ambient.intensity = 0.2 + f.level * 0.5
@@ -325,16 +346,14 @@ export class SceneController {
     this.journeyRoot.visible = true
 
     const now = performance.now()
-    const dt =
-      this.lastJourneyMs > 0
-        ? Math.min(0.05, (now - this.lastJourneyMs) * 0.001)
-        : 0.016
+    const dt = computeJourneyDtSeconds(this.lastJourneyMs, now)
     this.lastJourneyMs = now
     if (this.lastVizMode !== 'journey') {
       this.lastVizMode = 'journey'
       // Rebase the "moving frame" when entering journey to avoid sudden dz jumps.
       this.journeyCamZ = this.journeyProgress
       this.lastJourneyMs = 0
+      this.journeyRadiusSmooth = radiusFromLevel(f.level)
       this.updateJourneyControlsTarget()
       this.controls.update()
     }
@@ -342,10 +361,10 @@ export class SceneController {
     const speed = this.reducedMotionMql.matches
       ? JOURNEY_SPEED_UNITS_PER_S * 0.25
       : JOURNEY_SPEED_UNITS_PER_S
-    this.journeyProgress += speed * dt
+    this.journeyProgress = advanceJourneyProgress(this.journeyProgress, speed, dt)
 
     // The wire + camera move forward together (static relative framing).
-    this.journeyRoot.position.set(0, 0, this.journeyProgress)
+    this.journeyRoot.position.copy(this.journeyAxis).multiplyScalar(this.journeyProgress)
 
     // Carry the orbit camera frame forward without overwriting user orbit.
     const dz = this.journeyProgress - this.journeyCamZ
@@ -355,7 +374,12 @@ export class SceneController {
     // Spawn a node on each focus change (note event surrogate).
     const pc = graph.focusPitchClass
     if (pc !== null && pc !== this.lastFocusPc && pc >= 0) {
-      this.spawnJourneyNode(pc, f.level)
+      const targetR = radiusFromLevel(f.level)
+      const a = this.reducedMotionMql.matches
+        ? JOURNEY_CONFIG.loudnessReducedMotionLerp
+        : 1
+      this.journeyRadiusSmooth += (targetR - this.journeyRadiusSmooth) * a
+      this.spawnJourneyNode(pc, f.level, this.journeyRadiusSmooth)
     }
     this.lastFocusPc = pc
 
@@ -369,14 +393,12 @@ export class SceneController {
     this.renderer.setClearColor(BACKGROUND_CLEAR, 1)
   }
 
-  private spawnJourneyNode(pitchClass: number, brightness: number) {
-    // Fixed radius around wire axis (+Z), random angle.
-    const theta = Math.random() * Math.PI * 2
-    const x = Math.cos(theta) * JOURNEY_NODE_RADIUS
-    const y = Math.sin(theta) * JOURNEY_NODE_RADIUS
+  private spawnJourneyNode(pitchClass: number, brightness: number, radius: number) {
+    // Fixed radius around the wire axis, deterministic angle per pitch class.
+    const theta = thetaForPitchClass(pitchClass)
     // Spawn nodes in *world space* near the front of the wire segment.
     // This ensures the camera+wire can travel forward while nodes are left behind (visible motion).
-    const z =
+    const s =
       this.journeyProgress + (JOURNEY_WIRE_AHEAD - JOURNEY_SPAWN_FROM_WIRE_FRONT)
 
     const i = this.journeyWrite % JOURNEY_NODE_MAX
@@ -404,7 +426,14 @@ export class SceneController {
     m.material.roughness = matParams.roughness
     m.material.opacity = 1
     m.visible = true
-    m.position.set(x, y, z)
+    const r = Math.max(JOURNEY_NODE_RADIUS, radius)
+    const cosT = Math.cos(theta)
+    const sinT = Math.sin(theta)
+    m.position
+      .copy(this.journeyAxis)
+      .multiplyScalar(s)
+      .addScaledVector(this.journeyBasisU, cosT * r)
+      .addScaledVector(this.journeyBasisV, sinT * r)
     m.scale.setScalar(1.1 + 0.35 * brightness)
   }
 
@@ -413,7 +442,8 @@ export class SceneController {
     for (let i = 0; i < this.journeyNodeMeshes.length; i++) {
       const m = this.journeyNodeMeshes[i]
       if (!m || !m.visible) continue
-      const behind = this.journeyProgress - m.position.z
+      const nodeS = m.position.dot(this.journeyAxis)
+      const behind = this.journeyProgress - nodeS
       if (behind <= 0) {
         m.material.opacity = 1
         continue
@@ -428,8 +458,8 @@ export class SceneController {
   }
 
   private updateJourneyControlsTarget() {
-    const frontZ = this.journeyProgress + JOURNEY_WIRE_AHEAD
-    this.journeyTargetWork.set(0, 0, frontZ)
+    const frontS = this.journeyProgress + JOURNEY_WIRE_AHEAD
+    this.journeyTargetWork.copy(this.journeyAxis).multiplyScalar(frontS)
     // Keep the camera orbit centered on the wire tip.
     this.controls.target.copy(this.journeyTargetWork)
   }
@@ -439,60 +469,6 @@ export class SceneController {
     this.controls.dampingFactor = this.reducedMotionMql.matches ? 0.04 : 0.08
     this.controls.rotateSpeed = this.reducedMotionMql.matches ? 0.5 : ORBIT_ROTATE_SPEED
     this.controls.zoomSpeed = this.reducedMotionMql.matches ? 0.85 : ORBIT_ZOOM_SPEED
-  }
-
-  private updateTrail(g: GraphViewSnapshot) {
-    // “Journey”: leave a persistent path of the drifting graph.
-    const p = g.centroid
-    const next = this.tmpVec.set(p.x, p.y, p.z)
-    if (this.trailCount === 0) {
-      this.trailLast.copy(next)
-      this.pushTrailPoint(next)
-      return
-    }
-    if (next.distanceTo(this.trailLast) < TRAIL_MIN_STEP) return
-    this.trailLast.copy(next)
-    this.pushTrailPoint(next)
-  }
-
-  private pushTrailPoint(v: Vector3) {
-    if (this.trailCount < TRAIL_MAX_POINTS) {
-      const i = this.trailCount * 3
-      this.trailPositions[i] = v.x
-      this.trailPositions[i + 1] = v.y
-      this.trailPositions[i + 2] = v.z
-      this.trailCount++
-    } else {
-      // Shift left by one point (cheap enough at this scale).
-      this.trailPositions.copyWithin(0, 3)
-      const i = (TRAIL_MAX_POINTS - 1) * 3
-      this.trailPositions[i] = v.x
-      this.trailPositions[i + 1] = v.y
-      this.trailPositions[i + 2] = v.z
-    }
-    const posAttr = this.trailGeo.getAttribute('position')
-    posAttr.needsUpdate = true
-    this.trailGeo.setDrawRange(0, Math.max(2, this.trailCount))
-
-    // Every N points, drop a breadcrumb sphere. Older breadcrumbs fade out.
-    if (this.reducedMotionMql.matches) return
-    if (this.trailCount % BREADCRUMB_EVERY_POINTS !== 0) return
-    const idx = this.breadcrumbWrite % BREADCRUMB_MAX
-    this.breadcrumbWrite++
-    const m = this.breadcrumbMeshes[idx]!
-    m.position.copy(v)
-    m.visible = true
-    m.material.color.setHex(0xffffff)
-    m.material.emissive.setHex(0x111114)
-    m.material.opacity = 0.36
-    // Recompute fades (cheap: BREADCRUMB_MAX is small).
-    const filled = Math.min(this.breadcrumbWrite, BREADCRUMB_MAX)
-    for (let k = 0; k < filled; k++) {
-      const j = (idx - k + BREADCRUMB_MAX) % BREADCRUMB_MAX
-      const mm = this.breadcrumbMeshes[j]!
-      const a = 0.36 * Math.exp(-k * 0.035)
-      mm.material.opacity = Math.max(0, a)
-    }
   }
 
   private nodeMaterial(pc: number, b: number, focus: boolean) {
@@ -506,58 +482,6 @@ export class SceneController {
     return { col, emi, matParams: { metalness: 0.38, roughness: 0.42 } }
   }
 
-  private syncGraphNodes(g: GraphViewSnapshot, f: FeatureFrame) {
-    const seen = new Set<number>()
-    for (const n of g.nodes) {
-      seen.add(n.pitchClass)
-      let mesh = this.nodeMeshes.get(n.pitchClass)
-      if (!mesh) {
-        const mat = new MeshStandardMaterial({
-          color: 0x666666,
-          emissive: 0x0,
-          metalness: 0.38,
-          roughness: 0.42,
-        })
-        mesh = new Mesh(this.nodeGeom, mat)
-        this.nodeGroup.add(mesh)
-        this.nodeMeshes.set(n.pitchClass, mesh)
-      }
-      const p = n.position
-      mesh.position.set(p.x, p.y, p.z)
-      const b = n.brightness
-      if (n.pitchClass < 0) {
-        mesh.material.color.setHex(0x5a5a6a)
-        mesh.material.metalness = 0.25
-        mesh.material.roughness = 0.55
-        mesh.material.emissive.setHex(0x101018)
-        mesh.scale.setScalar(0.9 + 0.1 * f.level)
-      } else {
-        const { col, emi, matParams } = this.nodeMaterial(
-          n.pitchClass,
-          b,
-          n.isFocus
-        )
-        mesh.material.color.copy(col)
-        mesh.material.metalness = matParams.metalness
-        mesh.material.roughness = matParams.roughness
-        mesh.material.emissive.copy(emi)
-        const s =
-          0.85 + 0.35 * b * (1 + 0.35 * (n.isFocus ? 1.2 * n.brightness : 0))
-        mesh.scale.setScalar(s * (n.isInitialSphere ? 1.05 : 1))
-      }
-    }
-    for (const k of this.nodeMeshes.keys()) {
-      if (!seen.has(k)) {
-        const m = this.nodeMeshes.get(k)!
-        this.nodeGroup.remove(m)
-        m.material.dispose()
-        this.nodeMeshes.delete(k)
-      }
-    }
-    this.renderer.setClearColor(BACKGROUND_CLEAR, 1)
-    this.ambient.intensity = 0.12 + 0.35 * f.level
-  }
-
   private clearEdges() {
     while (this.edgeGroup.children.length) {
       const c = this.edgeGroup.children[0]!
@@ -566,70 +490,6 @@ export class SceneController {
         c.geometry.dispose()
       }
     }
-  }
-
-  private syncEdges(g: GraphViewSnapshot) {
-    this.clearEdges()
-    for (const e of g.edges) {
-      const geo = new BufferGeometry().setFromPoints([
-        new Vector3(e.from.x, e.from.y, e.from.z),
-        new Vector3(e.to.x, e.to.y, e.to.z),
-      ])
-      const line = new Line(geo, this.lineMat)
-      this.edgeGroup.add(line)
-    }
-  }
-
-  private updateGraphCamera(_f: FeatureFrame, g: GraphViewSnapshot) {
-    if (g.didRevisit) {
-      this.revisitDolly = 1
-    } else {
-      this.revisitDolly *= 0.92
-    }
-    this.lastFrameMs = performance.now()
-    const focusP = g.nodes.find(
-      (n) => n.pitchClass === g.focusPitchClass && n.pitchClass >= 0
-    )
-    const c = g.centroid
-    this.lookWork.set(c.x, c.y, c.z)
-    if (focusP) {
-      this.tmpVec.set(
-        focusP.position.x,
-        focusP.position.y,
-        focusP.position.z
-      )
-      this.lookWork.lerp(this.tmpVec, 0.55)
-    }
-    const a = this.reducedMotionMql.matches ? 0.06 : 0.1
-    this.lookSmooth.lerp(this.lookWork, a)
-    const wobble = 0.08
-    this.offAxis.set(
-      wobble * Math.sin(this.tPhase * 0.4),
-      wobble * 0.45 * Math.cos(this.tPhase * 0.31),
-      0
-    )
-    const r = g.contentRadius
-    let dTarget = Math.max(2, r * 2.55 + 1.35) * (1 - 0.14 * this.revisitDolly)
-    dTarget = Math.min(42, dTarget)
-    this.distSmooth += (dTarget - this.distSmooth) * (a * 0.7)
-    const dist = this.distSmooth
-    const cam = this.camera
-    const dir = new Vector3(0.38, 0.22, 1.05).normalize()
-    this.point.position.set(
-      this.lookSmooth.x + 0.4,
-      this.lookSmooth.y + 0.9,
-      this.lookSmooth.z + 0.5
-    )
-    cam.position.set(
-      this.lookSmooth.x + (dir.x + this.offAxis.x) * dist,
-      this.lookSmooth.y + (dir.y + this.offAxis.y) * dist,
-      this.lookSmooth.z + (dir.z + this.offAxis.z) * dist
-    )
-    cam.lookAt(
-      this.lookSmooth.x,
-      this.lookSmooth.y,
-      this.lookSmooth.z
-    )
   }
 
   render() {

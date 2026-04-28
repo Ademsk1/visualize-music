@@ -43,6 +43,7 @@
   margin: 0;
   position: relative;
   width: 100%;
+  order: 1;
 }
 
 .stage-host:focus-visible {
@@ -73,7 +74,7 @@
   margin: 0;
   font-size: 0.75rem;
   line-height: 1.35;
-  color: #a8a0c4;
+  color: #c2bfd0;
   max-width: 36ch;
 }
 
@@ -83,21 +84,29 @@
   justify-content: space-between;
   gap: 1rem;
   padding: 0.65rem 1rem;
-  background: rgba(12, 12, 16, 0.88);
-  border-top: 1px solid #1e1e28;
+  background: rgba(14, 14, 18, 0.92);
+  border-top: 1px solid #2a2a36;
   flex-shrink: 0;
+  order: 2;
 }
 
 .hud-status {
   font-size: 0.75rem;
-  color: #8b8b9a;
+  color: #d0cfe0;
+}
+
+.hud-status-icon {
+  display: inline-block;
+  width: 1.1em;
+  text-align: center;
+  opacity: 0.9;
 }
 
 .hud-tagline {
   margin: 0;
   font-size: 0.7rem;
   line-height: 1.4;
-  color: #6a6678;
+  color: #a8a6bb;
   max-width: 42ch;
 }
 
@@ -105,7 +114,7 @@
   flex: 1;
   min-width: 0;
   max-width: none;
-  color: #c8b8e0;
+  color: #ddd3f0;
 }
 
 .hud-cta {
@@ -132,14 +141,14 @@
 
 .hud-cta--stop {
   background: transparent;
-  color: #d4d2e0;
-  border: 1px solid #343244;
+  color: #e4e2ee;
+  border: 1px solid #4a4860;
 }
 
 .hud-cta--stop:hover {
   filter: none;
-  background: rgba(255, 255, 255, 0.04);
-  border-color: #4a4860;
+  background: rgba(255, 255, 255, 0.06);
+  border-color: #6a6686;
 }
 
 .hud-cta:hover:not(:disabled) {
@@ -166,7 +175,7 @@
 
 .hud-level-label {
   font-size: 0.68rem;
-  color: #7a7688;
+  color: #b4b1c4;
   white-space: nowrap;
 }
 
@@ -178,7 +187,7 @@
 
 .hud-level-value {
   font-size: 0.68rem;
-  color: #6a6678;
+  color: #b0adbf;
   font-variant-numeric: tabular-nums;
   min-width: 2.5ch;
 }
