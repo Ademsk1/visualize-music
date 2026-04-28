@@ -49,6 +49,42 @@ describe('NoteGraphModel', () => {
     expect(BRIGHTNESS_HALF_LIFE_NOTES).toBe(5)
   })
 
+  it('prefers all strong poly classes over monophonic hint (chord display)', () => {
+    const m = new NoteGraphModel()
+    const c = new Float32Array(CHROMA_SIZE)
+    c[0] = 1
+    c[4] = 1
+    for (let i = 0; i < CHROMA_SIZE; i++) {
+      if (i !== 0 && i !== 4) c[i] = 0.01
+    }
+    const g = m.update(0.3, c, 0.05, -60, {
+      pitchClassHint: 0,
+      pitchClassConf: 0.95,
+      polyPitchClasses: [
+        { pc: 0, conf: 0.9 },
+        { pc: 4, conf: 0.85 },
+      ],
+    })
+    expect(g.noteEvent).not.toBeNull()
+    expect(g.noteEvent!.pitchClasses).toEqual([0, 4])
+  })
+
+  it('sustain mode emits a note when monophonic pitch class changes (legato)', () => {
+    const m = new NoteGraphModel()
+    m.update(0, chromaWith(0, 1), 0.05, -60, {
+      pitchClassHint: 0,
+      pitchClassConf: 0.5,
+      sustainMode: true,
+    })
+    const g = m.update(0.05, chromaWith(2, 1), 0.051, -60, {
+      pitchClassHint: 2,
+      pitchClassConf: 0.5,
+      sustainMode: true,
+    })
+    expect(g.noteEvent).not.toBeNull()
+    expect(g.noteEvent!.pitchClasses).toContain(2)
+  })
+
   it('emits a chord noteEvent with multiple pitch classes on first focus', () => {
     const m = new NoteGraphModel()
     const c = new Float32Array(CHROMA_SIZE)

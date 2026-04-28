@@ -18,6 +18,17 @@ export type FeatureFrame = {
    * Polyphonic pitch-class candidates (0–11) from HPS + smoothing, when present.
    */
   polyPitchClasses?: ReadonlyArray<{ readonly pc: number; readonly conf: number }>
+  /**
+   * 0–1: journey wire steering. With confident monophonic pitch, maps the lower
+   * half of the keyboard (MIDI 21–64) to 0..1; high register → ~0.5; otherwise
+   * spectral low-band tilt (legacy).
+   */
+  bassTilt01?: number
+  /**
+   * Rounded MIDI when monophonic pitch is confident (same gate as `pitchClassHint`).
+   * Used for register (e.g. bass) without misreading `bassTilt01` scale.
+   */
+  midiNoteMonophonic?: number
   /** Monotonic frame id for debugging */
   t: number
 }

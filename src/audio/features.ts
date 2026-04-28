@@ -1,4 +1,9 @@
 import {
+  bassTilt01FromFloatDbSpectrum,
+  bassTilt01WithLowKeyboard,
+} from './bassTilt'
+import { freqFromLogPitch01, midiFromHz } from './pitchLogRange'
+import {
   accumulateChromaFromFloatSpectrum,
   floatFreqDbToLinear,
 } from './chroma'
@@ -84,11 +89,7 @@ function normalizeLinearSpectrumMax(a: Float32Array): void {
 
 function pitchClassFromPitch01(pitch01: number): number | null {
   if (!Number.isFinite(pitch01)) return null
-  // Reconstruct frequency from the pitch01 mapping in pitchAutocorr.ts.
-  const P_MIN = 80
-  const P_MAX = 2000
-  const logSpan = Math.log2(P_MAX) - Math.log2(P_MIN)
-  const f = 2 ** (Math.log2(P_MIN) + pitch01 * logSpan)
+  const f = freqFromLogPitch01(pitch01)
   if (!Number.isFinite(f) || f <= 0) return null
   const ref = referenceA4Hz > 0 && Number.isFinite(referenceA4Hz) ? referenceA4Hz : 440
   const midi = Math.round(69 + 12 * Math.log2(f / ref))
@@ -170,9 +171,20 @@ export function readFeatureFrame(
   smoothTonal = aT * rawTonal + (1 - aT) * smoothTonal
 
   let polyPitch: Array<{ readonly pc: number; readonly conf: number }> | undefined
+  let bassTilt01: number | undefined
 
   if (chromaOut) {
     analyser.getFloatFrequencyData(ff)
+    const spectralTilt = bassTilt01FromFloatDbSpectrum(
+      ff,
+      analyser.context.sampleRate
+    )
+    bassTilt01 = bassTilt01WithLowKeyboard(
+      spectralTilt,
+      lastPitch01,
+      lastPitchConf,
+      referenceA4Hz
+    )
     accumulateChromaFromFloatSpectrum(
       ff,
       analyser.context.sampleRate,
@@ -216,9 +228,14 @@ export function readFeatureFrame(
   }
 
   const frame: FeatureFrame = { level: smoothLevel, tonalHint: smoothTonal, t }
+  if (bassTilt01 !== undefined) frame.bassTilt01 = bassTilt01
   if (lastPitchClass !== null && lastPitchConf >= 0.35) {
     frame.pitchClassHint = lastPitchClass
     frame.pitchClassConf = lastPitchConf
+    if (lastPitch01 != null) {
+      const hz = freqFromLogPitch01(lastPitch01)
+      frame.midiNoteMonophonic = Math.round(midiFromHz(hz, referenceA4Hz))
+    }
   }
   if (polyPitch) frame.polyPitchClasses = polyPitch
   return { frame, rms }
@@ -231,6 +248,7 @@ export function stubFeatureFrame(t: number): { frame: FeatureFrame; rms: number 
     frame: {
       level: 0.1 + 0.06 * Math.sin(w),
       tonalHint: 0.45 + 0.06 * Math.sin(w * 0.65 + 0.3),
+      bassTilt01: 0.5,
       t,
     },
     rms: 0.0004,

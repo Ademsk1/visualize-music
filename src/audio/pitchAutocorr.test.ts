@@ -29,6 +29,13 @@ describe('estimateLogPitch01', () => {
     expect(p!).toBeLessThanOrEqual(1)
   })
 
+  it('uses a 1024-sample window (fits common analyser buffers)', () => {
+    const p = estimateLogPitch01(sineBuffer(1024, 48_000, 220), 48_000)
+    expect(p).not.toBeNull()
+    expect(p!).toBeGreaterThan(0.15)
+    expect(p!).toBeLessThan(0.55)
+  })
+
   it('returns null for near-silence', () => {
     const buf = new Float32Array(512)
     expect(estimateLogPitch01(buf, 48_000)).toBeNull()

@@ -39,6 +39,10 @@ export const copy = {
   hudKbdSpaceAction: 'Start or stop',
   hudKbdTabAction: 'Move focus (skip, controls, stage)',
   hudKbdStageAction: 'Click the stage to focus the 3D view',
+  /** Journey: lock orbit so the view looks along the wire path. */
+  hudCameraAlignWire: 'Align view with path',
+  /** Favor slurred/legato notes (e.g. piano with sustain) in note detection. */
+  hudSustainMode: 'Sustain / legato sensitivity',
 } as const
 
 export function micErrorMessage(e: unknown): string {

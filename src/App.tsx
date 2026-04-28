@@ -51,6 +51,10 @@ function App() {
   const [angularPlacementMode, setAngularPlacementMode] =
     useState<AngularPlacementMode>('even')
   const [tuningA4Hz, setTuningA4Hz] = useState(DEFAULT_TUNING_A4_HZ)
+  const [journeyCameraAlignToWire, setJourneyCameraAlignToWire] =
+    useState(false)
+  const [sustainMode, setSustainMode] = useState(false)
+  const sustainModeRef = useRef(false)
   const [liveAudioReadout, setLiveAudioReadout] = useState<{
     level: number
     notesLine: string
@@ -110,6 +114,14 @@ function App() {
   useEffect(() => {
     sceneRef.current?.setAngularPlacementMode(angularPlacementMode)
   }, [angularPlacementMode])
+
+  useEffect(() => {
+    sceneRef.current?.setJourneyCameraAlignToWire(journeyCameraAlignToWire)
+  }, [journeyCameraAlignToWire])
+
+  useEffect(() => {
+    sustainModeRef.current = sustainMode
+  }, [sustainMode])
 
   useEffect(() => {
     setFeatureTuningA4Hz(tuningA4Hz)
@@ -221,6 +233,7 @@ function App() {
                 pitchClassConf: frame.pitchClassConf,
                 polyPitchClasses: frame.polyPitchClasses,
                 driftSpeedUnitsPerS: 0,
+                sustainMode: sustainModeRef.current,
               }
             )
             s.applyViz(frame, snap, { live: true })
@@ -328,6 +341,10 @@ function App() {
         onAngularPlacementMode={setAngularPlacementMode}
         journeySpeed={journeySpeed}
         onJourneySpeed={setJourneySpeed}
+        cameraAlignToWire={journeyCameraAlignToWire}
+        onCameraAlignToWire={setJourneyCameraAlignToWire}
+        sustainMode={sustainMode}
+        onSustainMode={setSustainMode}
         tuningA4Hz={tuningA4Hz}
         onTuningA4Hz={setTuningA4Hz}
         showTuningSlider={engineStatus === 'ready'}

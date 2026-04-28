@@ -19,6 +19,12 @@ type Props = {
   readonly onAngularPlacementMode?: (mode: 'even' | 'golden') => void
   readonly journeySpeed?: number
   readonly onJourneySpeed?: (value: number) => void
+  /** Lock camera to look along the wire (live journey). */
+  readonly cameraAlignToWire?: boolean
+  readonly onCameraAlignToWire?: (value: boolean) => void
+  /** Better detection of slurred notes (piano with sustain). */
+  readonly sustainMode?: boolean
+  readonly onSustainMode?: (value: boolean) => void
   /** Equal-temperament A4 (Hz) for pitch-class labels; 400–480. */
   readonly tuningA4Hz?: number
   readonly onTuningA4Hz?: (value: number) => void
@@ -58,8 +64,12 @@ export function HudBar({
   showLevelSlider = false,
   angularPlacementMode = 'even',
   onAngularPlacementMode,
-  journeySpeed = 0.55,
+  journeySpeed = 0.68,
   onJourneySpeed,
+  cameraAlignToWire = false,
+  onCameraAlignToWire,
+  sustainMode = false,
+  onSustainMode,
   tuningA4Hz = 440,
   onTuningA4Hz,
   showTuningSlider = false,
@@ -152,6 +162,8 @@ export function HudBar({
         {(showLevelSlider && onMinLevelDb) ||
         onAngularPlacementMode ||
         onJourneySpeed ||
+        onCameraAlignToWire ||
+        onSustainMode ||
         (showTuningSlider && onTuningA4Hz) ? (
           <div className="hud-controls">
             {showLevelSlider && onMinLevelDb && (
@@ -192,21 +204,43 @@ export function HudBar({
             {onJourneySpeed && (
               <label className="hud-level">
                 <span className="hud-level-label">Travel speed</span>
-                <input
-                  type="range"
-                  className="hud-level-range"
-                  min={0.05}
-                  max={2}
-                  step={0.01}
-                  value={journeySpeed}
-                  onChange={(e) => onJourneySpeed(Number(e.target.value))}
-                  aria-valuemin={0.05}
-                  aria-valuemax={2}
-                  aria-valuenow={journeySpeed}
-                />
+            <input
+              type="range"
+              className="hud-level-range"
+              min={0.05}
+              max={2.85}
+              step={0.01}
+              value={journeySpeed}
+              onChange={(e) => onJourneySpeed(Number(e.target.value))}
+              aria-valuemin={0.05}
+              aria-valuemax={2.85}
+              aria-valuenow={journeySpeed}
+            />
                 <span className="hud-level-value" aria-hidden>
                   {journeySpeed.toFixed(2)}
                 </span>
+              </label>
+            )}
+            {onCameraAlignToWire && (
+              <label className="hud-level hud-level--check">
+                <input
+                  type="checkbox"
+                  className="hud-check"
+                  checked={cameraAlignToWire}
+                  onChange={(e) => onCameraAlignToWire(e.target.checked)}
+                />
+                <span className="hud-level-label">{copy.hudCameraAlignWire}</span>
+              </label>
+            )}
+            {onSustainMode && (
+              <label className="hud-level hud-level--check">
+                <input
+                  type="checkbox"
+                  className="hud-check"
+                  checked={sustainMode}
+                  onChange={(e) => onSustainMode(e.target.checked)}
+                />
+                <span className="hud-level-label">{copy.hudSustainMode}</span>
               </label>
             )}
             {showTuningSlider && onTuningA4Hz && (

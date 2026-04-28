@@ -1,8 +1,8 @@
 import { CHROMA_SIZE } from '../audio/chroma'
 import { rmsToDbfs } from '../audio/chroma'
 
-export const FOCUS_DEBOUNCE_S = 0.2
-export const NOTE_EVENT_DEBOUNCE_S = 0.2
+export const FOCUS_DEBOUNCE_S = 0
+export const NOTE_EVENT_DEBOUNCE_S = 0
 /** Include poly pitch classes in a chord note event when conf is at least this. */
 export const POLY_EVENT_MIN_CONF = 0.22
 /**
@@ -95,7 +95,7 @@ export type GraphViewSnapshot = {
 type InternalEdge = { a: number; b: number; t: number }
 
 /**
- * One pitch-class graph: debounced focus, one sphere per (octave-agnostic) class, strands on first visit.
+ * One pitch-class graph: hysteresis-stabilized focus, one sphere per (octave-agnostic) class, strands on first visit.
  */
 export class NoteGraphModel {
   private focus: number | null = null
@@ -119,6 +119,8 @@ export class NoteGraphModel {
   private lastRms = 0
   private noteEventId = 0
   private driftSpeed: number | null = null
+  /** Last `sustainKeyFromFrame` when sustain mode is on; cleared on quiet/reset. */
+  private lastSustainKey: string | null = null
 
   reset(): void {
     this.focus = null
@@ -140,6 +142,7 @@ export class NoteGraphModel {
     this.lastRms = 0
     this.noteEventId = 0
     this.driftSpeed = null
+    this.lastSustainKey = null
   }
 
   private ensureDrift(nowS: number): void {
@@ -211,6 +214,13 @@ export class NoteGraphModel {
     poly: readonly { readonly pc: number; readonly conf: number }[] | null,
     opts: { readonly pitchClassHint?: number; readonly pitchClassConf?: number }
   ): number[] {
+    const polyStrong =
+      poly?.filter((p) => p.conf >= POLY_EVENT_MIN_CONF).map((p) =>
+        Math.max(0, Math.min(11, p.pc))
+      ) ?? []
+    if (polyStrong.length >= 2) {
+      return [...new Set(polyStrong)].sort((a, b) => a - b)
+    }
     if (
       opts.pitchClassHint != null &&
       opts.pitchClassConf != null &&
@@ -228,21 +238,81 @@ export class NoteGraphModel {
     return [cand]
   }
 
-  private detectOnset(nowS: number, rms: number): boolean {
-    // Simple onset: rising RMS with a minimum interval to avoid noise machine-gun.
+  private detectOnset(nowS: number, rms: number, sustain: boolean): boolean {
+    // Simple onset: rising RMS; sustain mode uses a gentler ratio (no sharp attack).
     const minInterval = NOTE_EVENT_DEBOUNCE_S
     if (nowS - this.lastOnsetAtS < minInterval) return false
     const prev = this.lastRms || 0
     this.lastRms = rms
-    const absGate = 0.012
+    const absGate = sustain ? 0.0075 : 0.012
     if (rms < absGate) return false
     if (prev <= 0) return true
-    return rms >= prev * 1.45
+    const ratio = sustain ? 1.1 : 1.45
+    return rms >= prev * ratio
   }
 
   private canEmitNoteEvent(nowS: number, reducedMotion: boolean): boolean {
     const minInterval = reducedMotion ? NOTE_EVENT_DEBOUNCE_S * 1.2 : NOTE_EVENT_DEBOUNCE_S
     return nowS - this.lastNoteEventAtS >= minInterval
+  }
+
+  /** Hint + poly snapshot for legato / sustain (Slurred line without RMS spikes). */
+  private sustainKeyFromFrame(
+    cand: number,
+    poly: readonly { readonly pc: number; readonly conf: number }[] | null,
+    hint: { readonly pc: number; readonly conf: number } | null
+  ): string {
+    const pPart =
+      poly && poly.length > 0
+        ? [
+            ...new Set(
+              poly
+                .filter((x) => x.conf >= POLY_EVENT_MIN_CONF)
+                .map((x) => Math.max(0, Math.min(11, x.pc)))
+            ),
+          ]
+            .sort((a, b) => a - b)
+            .join('.')
+        : ''
+    if (hint && hint.conf >= 0.28) {
+      return `h${Math.max(0, Math.min(11, hint.pc))}|${pPart}`
+    }
+    return `c${cand}|${pPart}`
+  }
+
+  /**
+   * When sustain mode is on, emit a note when the pitch snapshot changes (new
+   * slurred note) even if RMS does not jump.
+   */
+  private trySustainLegatoEvent(
+    nowS: number,
+    reducedMotion: boolean,
+    cand: number,
+    poly: readonly { readonly pc: number; readonly conf: number }[] | null,
+    hint: { readonly pc: number; readonly conf: number } | null,
+    opts: {
+      readonly sustainMode?: boolean
+      readonly pitchClassHint?: number
+      readonly pitchClassConf?: number
+    }
+  ): { pitchClasses: number[]; id: number } | null {
+    if (!opts.sustainMode) return null
+    const key = this.sustainKeyFromFrame(cand, poly, hint)
+    if (key === this.lastSustainKey) return null
+    const prev = this.lastSustainKey
+    this.lastSustainKey = key
+    if (prev === null) return null
+    if (!this.canEmitNoteEvent(nowS, reducedMotion)) {
+      this.lastSustainKey = prev
+      return null
+    }
+    this.lastNoteEventAtS = nowS
+    this.lastOnsetAtS = nowS
+    this.noteEventId++
+    return {
+      pitchClasses: this.pitchClassesForEvent(cand, poly, opts),
+      id: this.noteEventId,
+    }
   }
 
   /**
@@ -264,16 +334,20 @@ export class NoteGraphModel {
         readonly conf: number
       }>
       readonly driftSpeedUnitsPerS?: number
+      /** Legato: use pitch / softer RMS (piano with sustain). */
+      readonly sustainMode?: boolean
     } = {}
   ): GraphViewSnapshot {
     this._didRevisit = false
     const reducedMotion = opts.reducedMotion ?? false
+    const sustain = opts.sustainMode === true
     this.driftSpeed =
       opts.driftSpeedUnitsPerS != null && Number.isFinite(opts.driftSpeedUnitsPerS)
         ? Math.max(0, opts.driftSpeedUnitsPerS)
         : null
     if (rmsToDbfs(rms) < minDbfs) {
       this.lastRms = rms
+      this.lastSustainKey = null
       return this.buildSnapshot(nowS, reducedMotion, null)
     }
     const hint =
@@ -288,9 +362,18 @@ export class NoteGraphModel {
     }
 
     // Emit onset events even when focus doesn't change (for repeated strikes).
-    let noteEvent: { pitchClasses: number[]; id: number } | null = null
+    const sustainNote = this.trySustainLegatoEvent(
+      nowS,
+      reducedMotion,
+      cand,
+      poly,
+      hint,
+      opts
+    )
+
+    let noteEvent: { pitchClasses: number[]; id: number } | null = sustainNote
     if (this.focus !== null && this.focus === cand) {
-      if (this.detectOnset(nowS, rms)) {
+      if (!noteEvent && this.detectOnset(nowS, rms, sustain)) {
         this.lastOnsetAtS = nowS
         if (this.canEmitNoteEvent(nowS, reducedMotion)) {
           this.lastNoteEventAtS = nowS
@@ -308,16 +391,22 @@ export class NoteGraphModel {
     if (this.focus !== null) {
       const eCur = chroma[this.focus] ?? 0
       const eCand = chroma[cand] ?? 0
-      const switchRatio = 1.25
+      const switchRatio = sustain ? 1.1 : 1.25
       if (eCur > 0 && eCand < eCur * switchRatio) {
         // Require sustained advantage before switching.
         if (this.pendingFocus !== cand) {
           this.pendingFocus = cand
           this.pendingSinceS = nowS
         }
-        const hold = reducedMotion ? 0.18 : 0.12
+        const hold = sustain
+          ? reducedMotion
+            ? 0.08
+            : 0.05
+          : reducedMotion
+            ? 0.18
+            : 0.12
         if (nowS - this.pendingSinceS < hold) {
-          if (this.detectOnset(nowS, rms)) {
+          if (!noteEvent && this.detectOnset(nowS, rms, sustain)) {
             this.lastOnsetAtS = nowS
             if (this.canEmitNoteEvent(nowS, reducedMotion)) {
               this.lastNoteEventAtS = nowS
@@ -334,8 +423,8 @@ export class NoteGraphModel {
     }
 
     if (this.focus !== null && nowS - this.lastChangeAt < FOCUS_DEBOUNCE_S) {
-      // Still debounce focus changes; onset can still fire.
-      if (this.detectOnset(nowS, rms)) {
+      // Min time between focus switches (0 = off); onset can still fire.
+      if (!noteEvent && this.detectOnset(nowS, rms, sustain)) {
         this.lastOnsetAtS = nowS
         if (this.canEmitNoteEvent(nowS, reducedMotion)) {
           this.lastNoteEventAtS = nowS
@@ -350,8 +439,9 @@ export class NoteGraphModel {
     }
     this.applyFocusChange(cand, nowS)
     this.pendingFocus = null
-    // Treat the focus change as a note event.
-    if (this.canEmitNoteEvent(nowS, reducedMotion)) {
+    if (sustainNote) {
+      noteEvent = sustainNote
+    } else if (this.canEmitNoteEvent(nowS, reducedMotion)) {
       this.lastNoteEventAtS = nowS
       this.noteEventId++
       noteEvent = {

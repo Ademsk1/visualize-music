@@ -1,6 +1,6 @@
 export const JOURNEY_AXIS = { x: 0, y: 0, z: 1 } as const
 
-export const JOURNEY_SPEED_UNITS_PER_S = 0.55
+export const JOURNEY_SPEED_UNITS_PER_S = 0.68
 
 export function computeJourneyDtSeconds(lastMs: number, nowMs: number): number {
   if (!Number.isFinite(lastMs) || !Number.isFinite(nowMs)) return 0.016
