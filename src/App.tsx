@@ -12,6 +12,11 @@ import type { SceneController } from './scene/SceneController'
 import { NoteGraphModel } from './graph/noteGraphState'
 import { CHROMA_SIZE } from './audio/chroma'
 import { HudBar, type EngineStatus } from './ui/HudBar'
+import { HelpModal } from './ui/HelpModal'
+import {
+  acknowledgeIntro,
+  isIntroAcknowledged,
+} from './ui/introHelpStorage'
 import { copy, micErrorMessage } from './ui/copy'
 import { formatNoteReadout } from './ui/pitchClassNames'
 import type { FeatureFrame } from './types/featureFrame'
@@ -55,6 +60,7 @@ function App() {
     useState(false)
   const [sustainMode, setSustainMode] = useState(false)
   const sustainModeRef = useRef(false)
+  const [helpOpen, setHelpOpen] = useState(() => !isIntroAcknowledged())
   const [liveAudioReadout, setLiveAudioReadout] = useState<{
     level: number
     notesLine: string
@@ -264,6 +270,15 @@ function App() {
     }
   }, [tearDownGraph])
 
+  const dismissHelp = useCallback(() => {
+    acknowledgeIntro()
+    setHelpOpen(false)
+  }, [])
+
+  const openHelp = useCallback(() => {
+    setHelpOpen(true)
+  }, [])
+
   const handleControl = useCallback(async () => {
     if (engineStatus !== 'ready') return
 
@@ -324,6 +339,7 @@ function App() {
 
   return (
     <div className="app-root">
+      <HelpModal open={helpOpen} onDismiss={dismissHelp} />
       <a className="skip-link" href="#main-stage">
         {copy.skipToViz}
       </a>
@@ -334,6 +350,7 @@ function App() {
         audioSuspended={audioSuspended}
         blockedMessage={blockedMessage ?? undefined}
         onControl={handleControl}
+        onOpenHelp={openHelp}
         minLevelDb={minLevelDb}
         onMinLevelDb={setMinLevelDb}
         showLevelSlider={engineStatus === 'ready'}

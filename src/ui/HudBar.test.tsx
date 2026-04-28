@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { copy } from './copy'
+import { copy, helpModal } from './copy'
 import { HudBar } from './HudBar'
 import { SessionStates } from '../bootstrap/sessionState'
 
@@ -58,6 +58,21 @@ describe('HudBar CTA and session states', () => {
     const btn = screen.getByRole('button', { name: /Start listening/i })
     expect(btn.hasAttribute('disabled')).toBe(true)
     expect(btn.getAttribute('aria-busy')).toBe('true')
+  })
+
+  it('exposes a help control when onOpenHelp is provided', () => {
+    const onOpenHelp = vi.fn()
+    render(
+      <HudBar
+        session={SessionStates.idle}
+        engineStatus="ready"
+        onControl={() => {}}
+        onOpenHelp={onOpenHelp}
+      />
+    )
+    const help = screen.getByRole('button', { name: helpModal.helpButtonAria })
+    fireEvent.click(help)
+    expect(onOpenHelp).toHaveBeenCalledTimes(1)
   })
 
   it('shows Stop with stop styling when live and not suspended', () => {

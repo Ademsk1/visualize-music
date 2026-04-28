@@ -1,3 +1,5 @@
+> **Demo video:** GitHub [rejects](https://docs.github.com/repositories/working-with-files/managing-large-files/changes-to-repositories) files over 100 MB, so a full screen capture is not kept in this repo. Host a short clip on **YouTube**, **Vimeo**, or similar and link it here, or record locally when reviewing the project.
+
 # visualize-music
 
 Browser **microphone** → **Web Audio** analysis → **Three.js** stage — portfolio piece (see `_bmad-output/planning-artifacts/prd.md`).

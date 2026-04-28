@@ -141,3 +141,12 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Playwright
+playwright-report/
+test-results/
+blob-report/
+playwright/.cache/
+
+# Local screen recordings (GitHub file limit is 100 MB; host demos on YouTube / Vimeo / etc.)
+example.mov

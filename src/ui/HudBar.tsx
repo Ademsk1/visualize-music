@@ -1,5 +1,5 @@
 import { useId } from 'react'
-import { copy } from './copy'
+import { copy, helpModal } from './copy'
 import { SessionStates, type SessionState } from '../bootstrap/sessionState'
 
 export type EngineStatus = 'loading' | 'ready' | 'error'
@@ -11,6 +11,8 @@ type Props = {
   readonly audioSuspended?: boolean
   readonly blockedMessage?: string
   readonly onControl: () => void
+  /** Opens the general help / first-run overview. */
+  readonly onOpenHelp?: () => void
   /** dBFS noise gate; only when level slider is shown. */
   readonly minLevelDb?: number
   readonly onMinLevelDb?: (value: number) => void
@@ -59,6 +61,7 @@ export function HudBar({
   audioSuspended = false,
   blockedMessage,
   onControl,
+  onOpenHelp,
   minLevelDb = -42,
   onMinLevelDb,
   showLevelSlider = false,
@@ -83,15 +86,27 @@ export function HudBar({
           <p className="hud-hint hud-hint--error">
             {engineErrorMessage ?? copy.errorSceneLoad}
           </p>
-          <button
-            type="button"
-            className="hud-cta"
-            onClick={() => {
-              globalThis.location.reload()
-            }}
-          >
-            {copy.refreshPage}
-          </button>
+          <div className="hud-cta-group">
+            {onOpenHelp && (
+              <button
+                type="button"
+                className="hud-help"
+                onClick={onOpenHelp}
+                aria-label={helpModal.helpButtonAria}
+              >
+                <span aria-hidden>?</span>
+              </button>
+            )}
+            <button
+              type="button"
+              className="hud-cta"
+              onClick={() => {
+                globalThis.location.reload()
+              }}
+            >
+              {copy.refreshPage}
+            </button>
+          </div>
         </div>
       </section>
     )
@@ -283,15 +298,27 @@ export function HudBar({
           </p>
         )}
       </div>
-      <button
-        type="button"
-        className={ctaClass}
-        onClick={onControl}
-        disabled={engineStatus === 'loading'}
-        aria-busy={engineStatus === 'loading'}
-      >
-        {cta}
-      </button>
+      <div className="hud-cta-group">
+        {onOpenHelp && (
+          <button
+            type="button"
+            className="hud-help"
+            onClick={onOpenHelp}
+            aria-label={helpModal.helpButtonAria}
+          >
+            <span aria-hidden>?</span>
+          </button>
+        )}
+        <button
+          type="button"
+          className={ctaClass}
+          onClick={onControl}
+          disabled={engineStatus === 'loading'}
+          aria-busy={engineStatus === 'loading'}
+        >
+          {cta}
+        </button>
+      </div>
       </div>
       <div
         className="hud-kbd"
