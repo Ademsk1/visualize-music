@@ -1,4 +1,7 @@
-> **Demo video:** GitHub [rejects](https://docs.github.com/repositories/working-with-files/managing-large-files/changes-to-repositories) files over 100 MB, so a full screen capture is not kept in this repo. Host a short clip on **YouTube**, **Vimeo**, or similar and link it here, or record locally when reviewing the project.
+
+
+https://github.com/user-attachments/assets/36d3cf53-18b7-40f7-8919-d466fadab094
+
 
 # visualize-music
 
