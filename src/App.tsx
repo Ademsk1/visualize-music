@@ -8,6 +8,8 @@ import {
 } from './audio/features'
 import { createAudioGraph, type AudioGraph } from './audio/createAudioGraph'
 import type { SceneController } from './scene/SceneController'
+import { NoteGraphModel } from './graph/noteGraphState'
+import { CHROMA_SIZE } from './audio/chroma'
 import { HudBar, type EngineStatus } from './ui/HudBar'
 import { copy, micErrorMessage } from './ui/copy'
 import {
@@ -16,9 +18,14 @@ import {
 } from './ui/documentTitle'
 import './App.css'
 
+/** dBFS; lower = more sensitive (picks up quieter sounds). */
+const DEFAULT_MIN_LEVEL_DB = -42
+
 function App() {
   const hostRef = useRef<HTMLDivElement>(null)
   const graphRef = useRef<AudioGraph | null>(null)
+  const noteGraphRef = useRef(new NoteGraphModel())
+  const chromaRef = useRef(new Float32Array(CHROMA_SIZE))
   const sceneRef = useRef<SceneController | null>(null)
   const rafRef = useRef(0)
   const frameIdRef = useRef(0)
@@ -32,6 +39,12 @@ function App() {
   const [session, setSession] = useState<SessionState>(SessionStates.idle)
   const [blockedMessage, setBlockedMessage] = useState<string | null>(null)
   const [audioSuspended, setAudioSuspended] = useState(false)
+  const [minLevelDb, setMinLevelDb] = useState(DEFAULT_MIN_LEVEL_DB)
+  const minLevelDbRef = useRef(minLevelDb)
+  const reducedMotionRef = useRef(false)
+  useEffect(() => {
+    minLevelDbRef.current = minLevelDb
+  }, [minLevelDb])
 
   useEffect(() => {
     syncDocumentTitle(engineStatus, session, audioSuspended)
@@ -48,6 +61,7 @@ function App() {
     stateUnsubRef.current = null
     graphRef.current?.dispose()
     graphRef.current = null
+    noteGraphRef.current.reset()
     resetFeatureSmoothing()
     setAudioSuspended(false)
   }, [])
@@ -56,6 +70,7 @@ function App() {
     const mq = globalThis.matchMedia('(prefers-reduced-motion: reduce)')
     const apply = () => {
       setFeatureReducedMotion(mq.matches)
+      reducedMotionRef.current = mq.matches
     }
     apply()
     mq.addEventListener('change', apply)
@@ -124,12 +139,29 @@ function App() {
           if (mount.cancelled) return
           const t = frameIdRef.current++
           const graph = graphRef.current
-          const f = graph
-            ? readFeatureFrame(graph.analyser, t)
-            : stubFeatureFrame(t)
           const s = sceneRef.current
-          if (s) {
-            s.applyFrame(f)
+          if (!s) {
+            rafRef.current = requestAnimationFrame(loop)
+            return
+          }
+          if (graph) {
+            const { frame, rms } = readFeatureFrame(
+              graph.analyser,
+              t,
+              chromaRef.current
+            )
+            const snap = noteGraphRef.current.update(
+              performance.now() * 0.001,
+              chromaRef.current,
+              rms,
+              minLevelDbRef.current,
+              { reducedMotion: reducedMotionRef.current }
+            )
+            s.applyViz(frame, snap, { live: true })
+            s.render()
+          } else {
+            const { frame } = stubFeatureFrame(t)
+            s.applyViz(frame, null, { live: false })
             s.render()
           }
           rafRef.current = requestAnimationFrame(loop)
@@ -230,6 +262,9 @@ function App() {
         audioSuspended={audioSuspended}
         blockedMessage={blockedMessage ?? undefined}
         onControl={handleControl}
+        minLevelDb={minLevelDb}
+        onMinLevelDb={setMinLevelDb}
+        showLevelSlider={engineStatus === 'ready'}
       />
     </div>
   )

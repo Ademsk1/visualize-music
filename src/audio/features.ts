@@ -1,8 +1,10 @@
+import { accumulateChromaFromFloatSpectrum } from './chroma'
 import type { FeatureFrame } from '../types/featureFrame'
 import { estimateLogPitch01 } from './pitchAutocorr'
 
 let timeBuf: Float32Array<ArrayBuffer> | null = null
 let freqBuf: Uint8Array<ArrayBuffer> | null = null
+let floatFreq: Float32Array<ArrayBuffer> | null = null
 
 /** Smoothed outputs + peak follower for level (adaptive dynamics). */
 let smoothLevel = 0
@@ -34,7 +36,11 @@ function buffersFor(a: AnalyserNode) {
     const b = a.frequencyBinCount * Uint8Array.BYTES_PER_ELEMENT
     freqBuf = new Uint8Array(new ArrayBuffer(b))
   }
-  return { time: timeBuf, freq: freqBuf }
+  if (floatFreq?.length !== a.frequencyBinCount) {
+    const b = a.frequencyBinCount * Float32Array.BYTES_PER_ELEMENT
+    floatFreq = new Float32Array(new ArrayBuffer(b))
+  }
+  return { time: timeBuf, freq: freqBuf, floatFreq: floatFreq! }
 }
 
 /**
@@ -42,8 +48,12 @@ function buffersFor(a: AnalyserNode) {
  * clear) with spectral centroid — melody reads in colour; chords may smear.
  * Level uses a slow-decay peak tracker + EMA.
  */
-export function readFeatureFrame(analyser: AnalyserNode, t: number): FeatureFrame {
-  const { time, freq } = buffersFor(analyser)
+export function readFeatureFrame(
+  analyser: AnalyserNode,
+  t: number,
+  chromaOut: Float32Array | null = null
+): { frame: FeatureFrame; rms: number } {
+  const { time, freq, floatFreq: ff } = buffersFor(analyser)
   analyser.getFloatTimeDomainData(time)
   let sum = 0
   for (const s of time) {
@@ -85,15 +95,27 @@ export function readFeatureFrame(analyser: AnalyserNode, t: number): FeatureFram
   smoothLevel = aL * rawLevel + (1 - aL) * smoothLevel
   smoothTonal = aT * rawTonal + (1 - aT) * smoothTonal
 
-  return { level: smoothLevel, tonalHint: smoothTonal, t }
+  if (chromaOut) {
+    analyser.getFloatFrequencyData(ff)
+    accumulateChromaFromFloatSpectrum(
+      ff,
+      analyser.context.sampleRate,
+      chromaOut
+    )
+  }
+
+  return { frame: { level: smoothLevel, tonalHint: smoothTonal, t }, rms }
 }
 
 /** Idle stage motion when no mic / graph. */
-export function stubFeatureFrame(t: number): FeatureFrame {
+export function stubFeatureFrame(t: number): { frame: FeatureFrame; rms: number } {
   const w = t * 0.035
   return {
-    level: 0.1 + 0.06 * Math.sin(w),
-    tonalHint: 0.45 + 0.06 * Math.sin(w * 0.65 + 0.3),
-    t,
+    frame: {
+      level: 0.1 + 0.06 * Math.sin(w),
+      tonalHint: 0.45 + 0.06 * Math.sin(w * 0.65 + 0.3),
+      t,
+    },
+    rms: 0.0004,
   }
 }

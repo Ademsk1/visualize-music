@@ -154,3 +154,31 @@
 .hud-cta--stop:focus-visible {
   outline-color: #8b86a8;
 }
+
+.hud-level {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+  flex-wrap: wrap;
+  max-width: min(100%, 22rem);
+}
+
+.hud-level-label {
+  font-size: 0.68rem;
+  color: #7a7688;
+  white-space: nowrap;
+}
+
+.hud-level-range {
+  flex: 1 1 6rem;
+  min-width: 0;
+  accent-color: #7c5cff;
+}
+
+.hud-level-value {
+  font-size: 0.68rem;
+  color: #6a6678;
+  font-variant-numeric: tabular-nums;
+  min-width: 2.5ch;
+}

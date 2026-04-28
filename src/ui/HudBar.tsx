@@ -10,6 +10,10 @@ type Props = {
   readonly audioSuspended?: boolean
   readonly blockedMessage?: string
   readonly onControl: () => void
+  /** dBFS noise gate; only when level slider is shown. */
+  readonly minLevelDb?: number
+  readonly onMinLevelDb?: (value: number) => void
+  readonly showLevelSlider?: boolean
 }
 
 function lineStatus(
@@ -33,6 +37,9 @@ export function HudBar({
   audioSuspended = false,
   blockedMessage,
   onControl,
+  minLevelDb = -42,
+  onMinLevelDb,
+  showLevelSlider = false,
 }: Props) {
   if (engineStatus === 'error') {
     return (
@@ -69,6 +76,26 @@ export function HudBar({
         </span>
         {engineStatus === 'ready' && session === SessionStates.idle && (
           <p className="hud-tagline">{copy.taglineIdle}</p>
+        )}
+        {showLevelSlider && onMinLevelDb && (
+          <label className="hud-level">
+            <span className="hud-level-label">Min. level (dBFS)</span>
+            <input
+              type="range"
+              className="hud-level-range"
+              min={-58}
+              max={-18}
+              step={1}
+              value={minLevelDb}
+              onChange={(e) => onMinLevelDb(Number(e.target.value))}
+              aria-valuemin={-58}
+              aria-valuemax={-18}
+              aria-valuenow={minLevelDb}
+            />
+            <span className="hud-level-value" aria-hidden>
+              {minLevelDb}
+            </span>
+          </label>
         )}
         {session === SessionStates.blocked && blockedMessage && (
           <p className="hud-hint" role="status">
